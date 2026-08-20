@@ -154,3 +154,73 @@ export interface Detector {
   category: IssueCategory;
   detect(tree: LayoutTree): Issue[];
 }
+
+// --- Monitoring types (V4) ---
+
+// Mode 1: post-load analysis (automatic, no user intervention)
+export interface PostLoadReport {
+  layoutShifts: LayoutShiftEntry[];
+  clsScore: number;
+  animations: AnimationState[];
+  imagesWithoutDimensions: Array<{ selector: string; naturalSize: { width: number; height: number } }>;
+}
+
+export interface LayoutShiftEntry {
+  score: number;
+  timestamp: number;
+  sources: Array<{
+    selector: string;
+    previousRect: Rect;
+    currentRect: Rect;
+    delta: { x: number; y: number };
+  }>;
+}
+
+export interface AnimationState {
+  selector: string;
+  name: string;
+  state: "running" | "paused" | "finished" | "idle";
+  currentTime: number;
+  duration: number;
+  stuckSince?: number;
+}
+
+// Mode 2: fixed-duration monitoring (LLM calls monitor(duration_ms))
+export interface MonitoringResult {
+  duration: number;
+  snapshotBefore: LayoutTree;
+  snapshotAfter: LayoutTree;
+  mutationSummary: MutationSummary;
+  diff: LayoutDiff;
+}
+
+export interface MutationSummary {
+  totalMutations: number;
+  mutationsPerSecond: number;
+  hotElements: Array<{
+    selector: string;
+    mutationCount: number;
+    mutationsPerSecond: number;
+    mutationType: "attribute" | "childList" | "mixed";
+    pattern?: string;
+  }>;
+}
+
+export interface LayoutDiff {
+  added: string[];
+  removed: string[];
+  changed: Array<{
+    selector: string;
+    property: string;
+    before: string;
+    after: string;
+  }>;
+  unchangedCount: number;
+  changedCount: number;
+}
+
+export interface MonitorDetector {
+  category: IssueCategory;
+  detectPostLoad(report: PostLoadReport): Issue[];
+  detectMonitoring(result: MonitoringResult): Issue[];
+}
