@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Layout Lens Test Page</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; padding: 20px; background: #f5f5f5; }
+    h1 { margin-bottom: 20px; }
+    h2 { margin: 30px 0 10px; color: #333; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
+    .section { margin-bottom: 40px; padding: 20px; background: white; border-radius: 8px; }
+
+    /* BUG 1: Horizontal overflow — table wider than container */
+    .overflow-container {
+      width: 400px;
+      overflow: hidden;
+      border: 2px solid red;
+    }
+    .overflow-table {
+      min-width: 800px;
+    }
+    .overflow-table td {
+      padding: 8px 16px;
+      border: 1px solid #ccc;
+      white-space: nowrap;
+    }
+
+    /* BUG 2: Z-index trapped in stacking context */
+    .stacking-parent {
+      position: relative;
+      z-index: 1;
+      background: #e0e0ff;
+      padding: 20px;
+      opacity: 0.99; /* creates stacking context */
+    }
+    .stacking-child {
+      position: relative;
+      z-index: 9999;
+      background: #ff6b6b;
+      color: white;
+      padding: 10px;
+    }
+    .stacking-overlay {
+      position: relative;
+      z-index: 2;
+      background: #4ecdc4;
+      color: white;
+      padding: 10px;
+      margin-top: -15px;
+    }
+
+    /* BUG 3: Invisible element (zero size + opacity) */
+    .invisible-btn {
+      width: 0;
+      height: 0;
+      overflow: hidden;
+      opacity: 0;
+    }
+
+    /* BUG 4: Broken sticky */
+    .sticky-wrapper {
+      overflow-y: auto;
+      height: 200px;
+      border: 2px solid orange;
+    }
+    .sticky-header {
+      position: sticky;
+      top: 0;
+      background: #333;
+      color: white;
+      padding: 10px;
+    }
+
+    /* BUG 5: Image distortion */
+    .distorted-img {
+      width: 300px;
+      height: 300px;
+      /* no object-fit — will stretch */
+    }
+
+    /* BUG 6: Text truncation */
+    .truncated-text {
+      width: 200px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* BUG 7: Flex shrink with min-width issue */
+    .flex-container {
+      display: flex;
+      width: 500px;
+      border: 2px solid purple;
+    }
+    .flex-item-fixed {
+      flex-shrink: 0;
+      min-width: 300px;
+      background: #ddd;
+      padding: 10px;
+    }
+    .flex-item-squeeze {
+      flex-shrink: 1;
+      min-width: 0;
+      background: #bbb;
+      padding: 10px;
+    }
+
+    /* BUG 8: Fixed header covering content */
+    .fixed-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background: rgba(0,0,0,0.9);
+      color: white;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      z-index: 1000;
+    }
+    body { padding-top: 80px; }
+
+    /* BUG 9: Margin collapse */
+    .margin-box-a {
+      margin-bottom: 30px;
+      background: #ffd700;
+      padding: 10px;
+    }
+    .margin-box-b {
+      margin-top: 40px;
+      background: #87ceeb;
+      padding: 10px;
+    }
+
+    /* BUG 10: Whitespace gap (inline-block) */
+    .inline-block-container {
+      font-size: 0; /* common fix, but let's show the problem */
+    }
+    .inline-block-item {
+      display: inline-block;
+      width: 100px;
+      height: 50px;
+      background: #9b59b6;
+      color: white;
+      font-size: 14px;
+      text-align: center;
+      line-height: 50px;
+    }
+
+    /* BUG 11: Double scrollbar */
+    .outer-scroll {
+      overflow-y: auto;
+      height: 150px;
+      border: 2px solid teal;
+    }
+    .inner-scroll {
+      overflow-y: auto;
+      height: 100px;
+      border: 1px dashed teal;
+      margin: 10px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Fixed header that covers content -->
+  <div class="fixed-header">
+    <span>Fixed Navigation Bar (covers content below)</span>
+  </div>
+
+  <h1>Layout Lens — Test Page (12 intentional bugs)</h1>
+
+  <!-- BUG 1: Overflow -->
+  <div class="section">
+    <h2>1. Horizontal Overflow (clipped)</h2>
+    <div class="overflow-container">
+      <table class="overflow-table">
+        <tr>
+          <td>Column A</td><td>Column B</td><td>Column C</td>
+          <td>Column D</td><td>Column E</td><td>Column F</td>
+          <td>Column G</td><td>Column H</td>
+        </tr>
+        <tr>
+          <td>Data 1</td><td>Data 2</td><td>Data 3</td>
+          <td>Data 4</td><td>Data 5</td><td>Data 6</td>
+          <td>Data 7</td><td>Data 8</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- BUG 2: Z-index trapped -->
+  <div class="section">
+    <h2>2. Z-Index Trapped in Stacking Context</h2>
+    <div class="stacking-parent">
+      <div class="stacking-child">z-index: 9999 but trapped (parent has opacity: 0.99)</div>
+    </div>
+    <div class="stacking-overlay">z-index: 2 — appears on top despite lower z-index</div>
+  </div>
+
+  <!-- BUG 3: Invisible element -->
+  <div class="section">
+    <h2>3. Invisible Button</h2>
+    <p>There's a button here but you can't see it:</p>
+    <button class="invisible-btn">Click me</button>
+  </div>
+
+  <!-- BUG 4: Broken sticky -->
+  <div class="section">
+    <h2>4. Broken Sticky Header</h2>
+    <div class="sticky-wrapper">
+      <div class="sticky-header">I should stick but parent has overflow:auto</div>
+      <div style="padding: 10px;">
+        <p>Scroll content line 1</p><p>Scroll content line 2</p>
+        <p>Scroll content line 3</p><p>Scroll content line 4</p>
+        <p>Scroll content line 5</p><p>Scroll content line 6</p>
+        <p>Scroll content line 7</p><p>Scroll content line 8</p>
+        <p>Scroll content line 9</p><p>Scroll content line 10</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- BUG 5: Image distortion -->
+  <div class="section">
+    <h2>5. Distorted Image</h2>
+    <img class="distorted-img" src="https://picsum.photos/id/237/800/400" alt="Distorted dog">
+    <p>Natural: 800×400 (2:1) → Rendered: 300×300 (1:1) — stretched</p>
+  </div>
+
+  <!-- BUG 6: Text truncation -->
+  <div class="section">
+    <h2>6. Truncated Text</h2>
+    <div class="truncated-text">This is a very long product name that should be fully visible but gets cut off</div>
+  </div>
+
+  <!-- BUG 7: Flex shrink issue -->
+  <div class="section">
+    <h2>7. Flex Item Squeezed</h2>
+    <div class="flex-container">
+      <div class="flex-item-fixed">Fixed 300px (flex-shrink: 0)</div>
+      <div class="flex-item-squeeze">I get squeezed because the other item won't shrink</div>
+    </div>
+  </div>
+
+  <!-- BUG 8: Fixed header collision is already at the top -->
+
+  <!-- BUG 9: Margin collapse -->
+  <div class="section">
+    <h2>9. Margin Collapse</h2>
+    <div class="margin-box-a">margin-bottom: 30px</div>
+    <div class="margin-box-b">margin-top: 40px (gap should be 70px, is only 40px)</div>
+  </div>
+
+  <!-- BUG 10: Whitespace -->
+  <div class="section">
+    <h2>10. Inline-Block Whitespace</h2>
+    <div>
+      <span class="inline-block-item">A</span>
+      <span class="inline-block-item">B</span>
+      <span class="inline-block-item">C</span>
+    </div>
+  </div>
+
+  <!-- BUG 11: Double scrollbar -->
+  <div class="section">
+    <h2>11. Nested Scrollbars</h2>
+    <div class="outer-scroll">
+      <p>Outer scrollable area</p>
+      <div class="inner-scroll">
+        <p>Inner scroll 1</p><p>Inner scroll 2</p><p>Inner scroll 3</p>
+        <p>Inner scroll 4</p><p>Inner scroll 5</p><p>Inner scroll 6</p>
+      </div>
+      <p>More outer content</p>
+      <p>More outer content</p>
+      <p>More outer content</p>
+    </div>
+  </div>
+
+</body>
+</html>

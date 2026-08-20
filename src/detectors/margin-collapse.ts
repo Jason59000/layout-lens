@@ -72,7 +72,17 @@ export class MarginCollapseDetector implements Detector {
       const collapsedAmount = expectedGap - actualGap;
       if (collapsedAmount < 1) continue;
 
-      // This is a margin collapse
+      // Margin collapse is normal CSS. Only flag when both elements have
+      // author-defined vertical margins — the dev set both values explicitly
+      // and might not expect them to collapse.
+      const currentHasAuthorMargin = this.hasAuthorVerticalMargin(current);
+      const nextHasAuthorMargin = this.hasAuthorVerticalMargin(next);
+      if (!currentHasAuthorMargin || !nextHasAuthorMargin) continue;
+
+      // When both margins are identical, the collapse result equals either
+      // value — visually indistinguishable from "no collapse". Skip these.
+      if (bottomMargin === topMargin) continue;
+
       const severity = this.assessSeverity(
         collapsedAmount,
         expectedGap,
@@ -133,6 +143,18 @@ export class MarginCollapseDetector implements Detector {
       display === "list-item" ||
       display === "table" ||
       display.startsWith("flow")
+    );
+  }
+
+  private hasAuthorVerticalMargin(node: LayoutNode): boolean {
+    const verticalProps = ["margin", "margin-top", "margin-bottom"];
+    return node.rules.some(
+      (r) =>
+        !r.isUserAgent &&
+        !r.isInherited &&
+        verticalProps.includes(r.property) &&
+        r.value !== "0" &&
+        r.value !== "0px",
     );
   }
 

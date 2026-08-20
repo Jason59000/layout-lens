@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "layout-lens": {
+      "command": "npx",
+      "args": ["tsx", "src/server.ts"],
+      "cwd": "C:\\Users\\JASON\\Desktop\\debugfrontend"
+    }
+  }
+}
