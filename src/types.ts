@@ -124,6 +124,7 @@ export interface LayoutNode {
     hidden?: boolean;
     tabIndex?: number;
   };
+  shadowRoot?: boolean;
 }
 
 export interface LayoutTree {

@@ -132,7 +132,46 @@ export function registerInspectElement(server: McpServer): void {
           // DOMDebugger may not be available
         }
 
+        let reactComponent: { name: string; hierarchy: string[] } | null = null;
+        try {
+          const client = connection.client;
+          const escapedSelector = JSON.stringify(params.selector);
+          const reactResult = await client.Runtime.evaluate({
+            expression: `(function() {
+              var el = document.querySelector(${escapedSelector});
+              if (!el) return null;
+              var key = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'); });
+              if (!key) return null;
+              var fiber = el[key];
+              var components = [];
+              var f = fiber;
+              while (f) {
+                if (f.type && typeof f.type === 'function') {
+                  components.push(f.type.displayName || f.type.name || '(anonymous)');
+                }
+                f = f.return;
+                if (components.length > 5) break;
+              }
+              return components.length > 0 ? JSON.stringify({ name: components[0], hierarchy: components.reverse() }) : null;
+            })()`,
+            returnByValue: true,
+          });
+          if (reactResult.result.value) {
+            reactComponent = JSON.parse(reactResult.result.value as string);
+          }
+        } catch {
+          // React not available or element not a React component
+        }
+
         let text = formatElement(node, tree, issues);
+
+        if (reactComponent) {
+          const componentLine = `\n  component: <${reactComponent.name}>`;
+          const hierarchyLine = `\n  in: ${reactComponent.hierarchy.map(c => `<${c}>`).join(" > ")}`;
+          const headerEnd = text.indexOf("\n");
+          text = text.slice(0, headerEnd) + componentLine + hierarchyLine + text.slice(headerEnd);
+        }
+
         if (eventListeners.length > 0) {
           text += `\n\nEVENT LISTENERS:\n  ${eventListeners.join("\n  ")}`;
         }
