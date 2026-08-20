@@ -12,6 +12,8 @@ import { registerCapturePage } from "./tools/capture-page.js";
 import { registerDetectShifts } from "./tools/detect-shifts.js";
 import { registerCheckAnimations } from "./tools/check-animations.js";
 import { registerCompareColorSchemes } from "./tools/compare-color-schemes.js";
+import { registerWatchDomMutations } from "./tools/watch-dom-mutations.js";
+import { registerProfileRendering } from "./tools/profile-rendering.js";
 
 const server = new McpServer({
   name: "layout-lens",
@@ -29,6 +31,8 @@ registerCapturePage(server);
 registerDetectShifts(server);
 registerCheckAnimations(server);
 registerCompareColorSchemes(server);
+registerWatchDomMutations(server);
+registerProfileRendering(server);
 
 async function main() {
   const transport = new StdioServerTransport();
