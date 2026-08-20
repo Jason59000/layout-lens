@@ -13,6 +13,33 @@
     "start": "node dist/server.js",
     "test": "vitest"
   },
+  "license": "MIT",
+  "author": "Jason59000",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jason59000/layout-lens.git"
+  },
+  "homepage": "https://github.com/Jason59000/layout-lens",
+  "bugs": {
+    "url": "https://github.com/Jason59000/layout-lens/issues"
+  },
+  "keywords": [
+    "mcp",
+    "layout",
+    "css",
+    "debugging",
+    "chrome",
+    "cdp",
+    "devtools",
+    "ai",
+    "llm",
+    "frontend"
+  ],
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "chrome-remote-interface": "^0.33.2"
