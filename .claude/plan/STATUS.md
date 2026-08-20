@@ -47,9 +47,9 @@
 - [x] 8k. Scroll ownership chain — élément → scroll container → clip → sticky capture
 
 ### Batch 7 — Layout avancé
-- [ ] 8l. Grid/Flex resolved geometry — tracks résolues, placement items
+- [x] 8l. Grid/Flex resolved geometry — tracks résolues, placement items
 - [ ] 8m. Layout constraints — pourquoi cet élément fait exactement Npx
-- [ ] 8n. Transforms résolues — matrice finale, transform origin, chaîne ancestrale
+- [x] 8n. Transforms résolues — matrice finale, transform origin, chaîne ancestrale
 
 ## V9 — Nouveaux outils
 

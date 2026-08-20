@@ -435,6 +435,104 @@ export function registerInspectElement(server: McpServer): void {
           // scroll ownership is best-effort
         }
 
+        let gridFlexGeometry: any = null;
+        try {
+          const client = connection.client;
+          const escapedSel7 = JSON.stringify(params.selector);
+          const gfResult = await client.Runtime.evaluate({
+            expression: `(function() {
+              var el = document.querySelector(${escapedSel7});
+              if (!el) return null;
+              var cs = getComputedStyle(el);
+              var d = cs.display;
+              if (d === "grid" || d === "inline-grid") {
+                var cols = cs.gridTemplateColumns;
+                var rows = cs.gridTemplateRows;
+                var items = [];
+                for (var i = 0; i < el.children.length && i < 20; i++) {
+                  var child = el.children[i];
+                  var ccs = getComputedStyle(child);
+                  var t = child.tagName.toLowerCase();
+                  if (child.className && typeof child.className === "string") {
+                    var c = child.className.split(/\\s+/).filter(Boolean);
+                    if (c.length > 0) t += "." + c[0];
+                  }
+                  items.push({
+                    selector: t,
+                    gridColumn: ccs.gridColumnStart + " / " + ccs.gridColumnEnd,
+                    gridRow: ccs.gridRowStart + " / " + ccs.gridRowEnd
+                  });
+                }
+                return JSON.stringify({ type: "grid", columns: cols, rows: rows, gap: cs.gap, items: items });
+              }
+              if (d === "flex" || d === "inline-flex") {
+                var items = [];
+                for (var i = 0; i < el.children.length && i < 20; i++) {
+                  var child = el.children[i];
+                  var ccs = getComputedStyle(child);
+                  var rect = child.getBoundingClientRect();
+                  var t = child.tagName.toLowerCase();
+                  if (child.className && typeof child.className === "string") {
+                    var c = child.className.split(/\\s+/).filter(Boolean);
+                    if (c.length > 0) t += "." + c[0];
+                  }
+                  items.push({
+                    selector: t,
+                    flexGrow: ccs.flexGrow, flexShrink: ccs.flexShrink, flexBasis: ccs.flexBasis,
+                    width: Math.round(rect.width), height: Math.round(rect.height)
+                  });
+                }
+                return JSON.stringify({
+                  type: "flex", direction: cs.flexDirection, wrap: cs.flexWrap,
+                  justify: cs.justifyContent, align: cs.alignItems, gap: cs.gap,
+                  items: items
+                });
+              }
+              return null;
+            })()`,
+            returnByValue: true,
+          });
+          if (gfResult.result.value) {
+            gridFlexGeometry = JSON.parse(gfResult.result.value as string);
+          }
+        } catch {
+          // grid/flex geometry is best-effort
+        }
+
+        let transformChain: Array<{ selector: string; transform: string; origin: string }> | null = null;
+        try {
+          const client = connection.client;
+          const escapedSel8 = JSON.stringify(params.selector);
+          const txResult = await client.Runtime.evaluate({
+            expression: `(function() {
+              var el = document.querySelector(${escapedSel8});
+              if (!el) return null;
+              var chain = [];
+              var cur = el;
+              while (cur && cur !== document.documentElement) {
+                var cs = getComputedStyle(cur);
+                if (cs.transform && cs.transform !== "none") {
+                  var t = cur.tagName.toLowerCase();
+                  if (cur.id) t += "#" + cur.id;
+                  else if (cur.className && typeof cur.className === "string") {
+                    var c = cur.className.split(/\\s+/).filter(Boolean);
+                    if (c.length > 0) t += "." + c[0];
+                  }
+                  chain.push({ selector: t, transform: cs.transform, origin: cs.transformOrigin });
+                }
+                cur = cur.parentElement;
+              }
+              return chain.length > 0 ? JSON.stringify(chain) : null;
+            })()`,
+            returnByValue: true,
+          });
+          if (txResult.result.value) {
+            transformChain = JSON.parse(txResult.result.value as string);
+          }
+        } catch {
+          // transform chain is best-effort
+        }
+
         let text = formatElement(node, tree);
 
         if (reactComponent) {
@@ -496,6 +594,39 @@ export function registerInspectElement(server: McpServer): void {
           text += "\n\nSCROLL OWNERSHIP CHAIN:";
           for (const s of scrollOwnership) {
             text += `\n  ${s.selector}: overflow ${s.overflow}, ${s.scrollable}`;
+          }
+        }
+
+        if (gridFlexGeometry) {
+          if (gridFlexGeometry.type === "grid") {
+            text += "\n\nGRID GEOMETRY:";
+            text += `\n  columns: ${gridFlexGeometry.columns}`;
+            text += `\n  rows: ${gridFlexGeometry.rows}`;
+            if (gridFlexGeometry.gap && gridFlexGeometry.gap !== "normal") text += `\n  gap: ${gridFlexGeometry.gap}`;
+            if (gridFlexGeometry.items.length > 0) {
+              text += "\n  items:";
+              for (const item of gridFlexGeometry.items) {
+                text += `\n    ${item.selector}: col ${item.gridColumn}, row ${item.gridRow}`;
+              }
+            }
+          } else if (gridFlexGeometry.type === "flex") {
+            text += "\n\nFLEX GEOMETRY:";
+            text += `\n  direction: ${gridFlexGeometry.direction}, wrap: ${gridFlexGeometry.wrap}`;
+            text += `\n  justify: ${gridFlexGeometry.justify}, align: ${gridFlexGeometry.align}`;
+            if (gridFlexGeometry.gap && gridFlexGeometry.gap !== "normal") text += `\n  gap: ${gridFlexGeometry.gap}`;
+            if (gridFlexGeometry.items.length > 0) {
+              text += "\n  items:";
+              for (const item of gridFlexGeometry.items) {
+                text += `\n    ${item.selector}: grow=${item.flexGrow} shrink=${item.flexShrink} basis=${item.flexBasis} (${item.width}x${item.height})`;
+              }
+            }
+          }
+        }
+
+        if (transformChain && transformChain.length > 0) {
+          text += "\n\nTRANSFORM CHAIN:";
+          for (const tx of transformChain) {
+            text += `\n  ${tx.selector}: ${tx.transform} (origin: ${tx.origin})`;
           }
         }
 
