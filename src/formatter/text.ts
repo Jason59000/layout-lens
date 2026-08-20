@@ -317,6 +317,8 @@ export function formatPropertyTrace(
       if (src) meta.push(src);
       meta.push(`specificity: ${spec}`);
       if (rule.isInherited) meta.push("inherited");
+      if (rule.mediaQuery) meta.push(`@media ${rule.mediaQuery}`);
+      if (rule.containerQuery) meta.push(`@container ${rule.containerQuery}`);
       if (meta.length > 0) line += `  (${meta.join(", ")})`;
     }
 

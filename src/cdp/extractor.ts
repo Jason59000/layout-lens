@@ -272,6 +272,26 @@ function convertBoxModel(cdpBox: Protocol.DOM.BoxModel): BoxModel {
   };
 }
 
+function isVendorPrefix(name: string): boolean {
+  if (!name.startsWith("-")) return false;
+  // Allow CSS custom properties (--my-var)
+  if (name.startsWith("--")) return false;
+  return true;
+}
+
+function extractMediaQuery(rule: { media?: Array<{ text: string }> }): string | undefined {
+  if (!rule.media || rule.media.length === 0) return undefined;
+  const queries = rule.media
+    .filter(m => m.text && m.text !== "all")
+    .map(m => m.text);
+  return queries.length > 0 ? queries.join(" and ") : undefined;
+}
+
+function extractContainerQuery(rule: { containerQueries?: Array<{ text: string }> }): string | undefined {
+  if (!rule.containerQueries || rule.containerQueries.length === 0) return undefined;
+  return rule.containerQueries.map(c => c.text).join(", ");
+}
+
 /**
  * Parse a specificity from a CSS selector.
  * Returns [id, class, type] specificity tuple.
@@ -883,9 +903,13 @@ export class LayoutExtractor {
 
           const specificity = estimateSpecificity(selectorText);
 
+          // Extract media/container query context
+          const mediaQuery = extractMediaQuery(rule);
+          const containerQuery = extractContainerQuery(rule);
+
           // Extract each property from the rule
           for (const prop of rule.style.cssProperties) {
-            if (prop.disabled || prop.name.startsWith("-")) continue;
+            if (prop.disabled || isVendorPrefix(prop.name)) continue;
             if (!prop.value || prop.value === "") continue;
 
             rules.push({
@@ -898,6 +922,8 @@ export class LayoutExtractor {
               isInline,
               isInherited: false,
               isUserAgent,
+              mediaQuery,
+              containerQuery,
             });
           }
         }
@@ -906,7 +932,7 @@ export class LayoutExtractor {
       // Process inline styles
       if (matched.inlineStyle) {
         for (const prop of matched.inlineStyle.cssProperties) {
-          if (prop.disabled || prop.name.startsWith("-")) continue;
+          if (prop.disabled || isVendorPrefix(prop.name)) continue;
           if (!prop.value || prop.value === "") continue;
 
           rules.push({
@@ -929,9 +955,11 @@ export class LayoutExtractor {
             const selectorText = rule.selectorList.text;
             const isUserAgent = rule.origin === "user-agent";
             const specificity = estimateSpecificity(selectorText);
+            const mediaQuery = extractMediaQuery(rule);
+            const containerQuery = extractContainerQuery(rule);
 
             for (const prop of rule.style.cssProperties) {
-              if (prop.disabled || prop.name.startsWith("-")) continue;
+              if (prop.disabled || isVendorPrefix(prop.name)) continue;
               if (!prop.value || prop.value === "") continue;
 
               rules.push({
@@ -942,6 +970,8 @@ export class LayoutExtractor {
                 isInline: false,
                 isInherited: true,
                 isUserAgent,
+                mediaQuery,
+                containerQuery,
               });
             }
           }
@@ -949,7 +979,7 @@ export class LayoutExtractor {
           // Inherited inline styles
           if (inherited.inlineStyle) {
             for (const prop of inherited.inlineStyle.cssProperties) {
-              if (prop.disabled || prop.name.startsWith("-")) continue;
+              if (prop.disabled || isVendorPrefix(prop.name)) continue;
               if (!prop.value || prop.value === "") continue;
 
               rules.push({

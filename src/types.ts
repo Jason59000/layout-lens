@@ -30,6 +30,8 @@ export interface CSSRuleSource {
   isInline: boolean;
   isInherited: boolean;
   isUserAgent: boolean;
+  mediaQuery?: string;
+  containerQuery?: string;
 }
 
 export interface ScrollState {

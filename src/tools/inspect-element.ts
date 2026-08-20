@@ -134,6 +134,17 @@ export function registerInspectElement(server: McpServer): void {
           // React not available or element not a React component
         }
 
+        let cssVariables: Array<{ name: string; value: string }> = [];
+        try {
+          const client = connection.client;
+          const { computedStyle } = await client.CSS.getComputedStyleForNode({ nodeId: node.nodeId });
+          cssVariables = computedStyle
+            .filter(p => p.name.startsWith("--"))
+            .map(p => ({ name: p.name, value: p.value }));
+        } catch {
+          // CSS domain may not be available
+        }
+
         let text = formatElement(node, tree);
 
         if (reactComponent) {
@@ -145,6 +156,13 @@ export function registerInspectElement(server: McpServer): void {
 
         if (eventListeners.length > 0) {
           text += `\n\nEVENT LISTENERS:\n  ${eventListeners.join("\n  ")}`;
+        }
+
+        if (cssVariables.length > 0) {
+          text += "\n\nCSS VARIABLES:";
+          for (const v of cssVariables) {
+            text += `\n  ${v.name}: ${v.value}`;
+          }
         }
 
         return {
