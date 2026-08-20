@@ -116,7 +116,26 @@ export function registerInspectElement(server: McpServer): void {
           issues.push(...detector.detect(tree));
         }
 
-        const text = formatElement(node, tree, issues);
+        let eventListeners: string[] = [];
+        try {
+          const client = connection.client;
+          const resolved = await client.DOM.resolveNode({ nodeId: node.nodeId });
+          if (resolved.object.objectId) {
+            const listeners = await client.DOMDebugger.getEventListeners({
+              objectId: resolved.object.objectId,
+            });
+            eventListeners = listeners.listeners.map(
+              (l) => `${l.type}${l.once ? " (once)" : ""}${l.passive ? " (passive)" : ""}`,
+            );
+          }
+        } catch {
+          // DOMDebugger may not be available
+        }
+
+        let text = formatElement(node, tree, issues);
+        if (eventListeners.length > 0) {
+          text += `\n\nEVENT LISTENERS:\n  ${eventListeners.join("\n  ")}`;
+        }
 
         return {
           content: [{ type: "text", text }],
