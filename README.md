@@ -290,7 +290,7 @@ chrome --remote-debugging-port=9222
 
 That's it. Your agent now has 19 tools to look at the rendered page.
 
-## 17 Tools
+## 19 Tools
 
 ### Page snapshot (~150ms)
 
@@ -306,7 +306,7 @@ That's it. Your agent now has 19 tools to look at the rendered page.
 | Tool | Data |
 |------|------|
 | `inspect_element` | Box model, CSS rules (file:line), event listeners, React component, hit-test, clipping chain, fonts, grid/flex geometry, transforms, inline fragments, interaction state, focus, scroll ownership, containing block, blended background, CSS variables |
-| `trace_property` | Full CSS cascade with specificity + `CSS.resolveValues` for calc/em/%/var |
+| `trace_property` | CSS cascade from Blink + `CSS.resolveValues` for calc/em/%/var |
 | `compare_elements` | Geometric diff between two elements |
 
 ### Monitoring
