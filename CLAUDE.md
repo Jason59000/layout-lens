@@ -20,7 +20,7 @@ src/
 │   └── extractor.ts    # Batch + Full extraction, framework detection, shadow DOM
 ├── diagnostics/   # CSS rule tracing, Tailwind detection
 ├── formatter/     # LLM-friendly text output (tree view, element detail, cascade)
-├── tools/         # 16 MCP tool implementations
+├── tools/         # 17 MCP tool implementations
 ├── types.ts       # Shared types (LayoutNode, BoxModel) + tree utility functions
 └── server.ts      # MCP server entry point
 ```
@@ -31,23 +31,24 @@ src/
 - **Full**: per-element CDP calls, includes CSS rule sources (file:line), event listeners, React component mapping.
 - **Monitor**: time-based observation (DOM mutations, frame timing, multi-viewport).
 
-## 16 MCP Tools
+## 17 MCP Tools
 
 | Tool | Mode | Purpose |
 |------|------|---------|
 | `inspect_layout` | batch | Full page tree + framework detection + Tailwind detection |
 | `get_scroll_tree` | batch | Scroll containers + sticky elements |
-| `query_layout` | batch | Custom JS queries + responsive + colorScheme |
+| `query_layout` | batch | Custom JS queries + native style search + responsive + colorScheme |
 | `capture_page` | batch | Annotated screenshot + responsive + colorScheme |
-| `inspect_element` | full | Deep element inspection (CSS, events, React, hit-test, clipping, fonts, grid/flex, transforms) |
-| `trace_property` | full | CSS cascade for a specific property |
+| `inspect_element` | full | Deep inspection (CSS, events, React, hit-test, clipping, fonts, grid/flex, transforms, quads) |
+| `trace_property` | full | CSS cascade + CSS.resolveValues for calc/em/%/var |
 | `compare_elements` | full | Geometric diff between two elements |
 | `detect_layout_shifts` | snapshot | CLS score + shift source elements |
 | `check_animations` | snapshot | Stuck/hidden/running animation status |
 | `compare_color_schemes` | snapshot | Dark/light comparison + contrast check |
 | `check_interactive_states` | full | Hover/focus feedback + WCAG 2.4.7 |
 | `watch_dom_mutations` | monitor | DOM mutations over fixed duration |
-| `profile_rendering` | monitor | FPS + jank frames + frame distribution |
+| `watch_styles` | monitor | Track computed style changes (CSS.trackComputedStyleUpdates) |
+| `profile_rendering` | monitor | FPS + jank + LayerTree (compositing, scroll reasons, sticky) |
 | `test_responsive` | multi | 6 viewports + overflow/visibility/layout diff |
 | `inspect_accessibility` | full | Full accessibility tree with roles, names, states |
 | `get_performance_metrics` | snapshot | JS heap, DOM count, layout/script duration, navigation timing |
@@ -72,6 +73,13 @@ Geometry, 40+ computed styles, color/fontSize/lineHeight, textContent, pseudo-el
 - Scroll ownership chain
 - Grid/flex resolved geometry (tracks, items, grow/shrink/basis)
 - Transform chain (all ancestor transforms with origin)
+- DOM.getNodeForLocation hit-test with ignorePointerEventsNone
+- DOM.getContentQuads for inline multi-line text fragments
+- CSS.resolveValues (resolve calc/em/%/var in element context)
+- DOM.getNodesForSubtreeByStyle (native style search in query_layout)
+- LayerTree: compositing layers, scroll reasons, sticky constraints, paint counts
+- DOMSnapshot paint order
+- CSS.trackComputedStyleUpdates (watch_styles tool)
 
 ## Conventions
 

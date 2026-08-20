@@ -81,7 +81,23 @@ export function registerTraceProperty(server: McpServer): void {
 
         const tracer = new RuleTracer();
         const cascade = tracer.tracePropertyCascade(node, params.property);
-        const text = formatPropertyTrace(node, params.property, cascade);
+        let text = formatPropertyTrace(node, params.property, cascade);
+
+        if (cascade.length > 0) {
+          const winningValue = cascade[0].value.replace(/\s*!important\s*/, "");
+          try {
+            const client = connection.client;
+            const resolved = await (client.CSS as any).resolveValues({
+              nodeId: node.nodeId,
+              values: [winningValue],
+            });
+            if (resolved.results && resolved.results.length > 0 && resolved.results[0] !== winningValue) {
+              text += `\nResolved value: ${resolved.results[0]}`;
+            }
+          } catch {
+            // CSS.resolveValues may not be available
+          }
+        }
 
         return {
           content: [{ type: "text", text }],

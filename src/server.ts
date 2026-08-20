@@ -17,6 +17,7 @@ import { registerProfileRendering } from "./tools/profile-rendering.js";
 import { registerTestResponsive } from "./tools/test-responsive.js";
 import { registerInspectAccessibility } from "./tools/inspect-accessibility.js";
 import { registerGetPerformanceMetrics } from "./tools/get-performance-metrics.js";
+import { registerWatchStyles } from "./tools/watch-styles.js";
 
 const server = new McpServer({
   name: "layout-lens",
@@ -39,6 +40,7 @@ registerProfileRendering(server);
 registerTestResponsive(server);
 registerInspectAccessibility(server);
 registerGetPerformanceMetrics(server);
+registerWatchStyles(server);
 
 async function main() {
   const transport = new StdioServerTransport();

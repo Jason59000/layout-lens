@@ -223,37 +223,78 @@ export function registerInspectElement(server: McpServer): void {
           // containing block detection is best-effort
         }
 
-        let hitTestResult: { point: { x: number; y: number }; elementIndex: number; stack: string[] } | null = null;
+        let hitTestResult: {
+          point: { x: number; y: number };
+          topmost: string;
+          topmostIgnoringPointerEvents: string;
+          stack: string[];
+          elementIndex: number;
+          blocked: boolean;
+        } | null = null;
         try {
           const client = connection.client;
           const escapedSel2 = JSON.stringify(params.selector);
-          const htResult = await client.Runtime.evaluate({
+          const centerResult = await client.Runtime.evaluate({
             expression: `(function() {
               var el = document.querySelector(${escapedSel2});
               if (!el) return null;
-              var rect = el.getBoundingClientRect();
-              var cx = rect.left + rect.width / 2;
-              var cy = rect.top + rect.height / 2;
-              var stack = document.elementsFromPoint(cx, cy);
-              var idx = stack.indexOf(el);
-              return JSON.stringify({
-                point: { x: Math.round(cx), y: Math.round(cy) },
-                elementIndex: idx,
-                stack: stack.slice(0, 10).map(function(e) {
-                  var t = e.tagName.toLowerCase();
-                  if (e.id) t += "#" + e.id;
-                  else if (e.className && typeof e.className === "string") {
-                    var cls = e.className.split(/\\s+/).filter(Boolean);
-                    if (cls.length > 0) t += "." + cls[0];
-                  }
-                  return t;
-                })
-              });
+              var r = el.getBoundingClientRect();
+              return JSON.stringify({ x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) });
             })()`,
             returnByValue: true,
           });
-          if (htResult.result.value) {
-            hitTestResult = JSON.parse(htResult.result.value as string);
+          if (centerResult.result.value) {
+            const center = JSON.parse(centerResult.result.value as string);
+            const [normalHit, ignoreHit, stackResult] = await Promise.all([
+              (client.DOM as any).getNodeForLocation({ x: center.x, y: center.y, includeUserAgentShadowDOM: false }).catch(() => null),
+              (client.DOM as any).getNodeForLocation({ x: center.x, y: center.y, includeUserAgentShadowDOM: false, ignorePointerEventsNone: true }).catch(() => null),
+              client.Runtime.evaluate({
+                expression: `(function() {
+                  var stack = document.elementsFromPoint(${center.x}, ${center.y});
+                  return JSON.stringify(stack.slice(0, 10).map(function(e) {
+                    var t = e.tagName.toLowerCase();
+                    if (e.id) t += "#" + e.id;
+                    else if (e.className && typeof e.className === "string") {
+                      var cls = e.className.split(/\\s+/).filter(Boolean);
+                      if (cls.length > 0) t += "." + cls[0];
+                    }
+                    return t;
+                  }));
+                })()`,
+                returnByValue: true,
+              }).catch(() => null),
+            ]);
+
+            const describeNode = async (nodeId: number): Promise<string> => {
+              try {
+                const { node: n } = await client.DOM.describeNode({ nodeId });
+                let s = n.localName || n.nodeName.toLowerCase();
+                const attrs = n.attributes || [];
+                for (let i = 0; i < attrs.length; i += 2) {
+                  if (attrs[i] === "id") s += `#${attrs[i + 1]}`;
+                  if (attrs[i] === "class") {
+                    const cls = attrs[i + 1].split(/\s+/).filter(Boolean);
+                    if (cls.length > 0) s += `.${cls[0]}`;
+                  }
+                }
+                return s;
+              } catch { return `node:${nodeId}`; }
+            };
+
+            const topmost = normalHit?.nodeId ? await describeNode(normalHit.nodeId) : "none";
+            const topmostIgnoring = ignoreHit?.nodeId ? await describeNode(ignoreHit.nodeId) : "none";
+            const stack: string[] = stackResult?.result?.value ? JSON.parse(stackResult.result.value as string) : [];
+            const nodeSelector = buildMatchSelector(node).toLowerCase();
+            const elementIndex = stack.findIndex(s => s.toLowerCase() === nodeSelector);
+
+            hitTestResult = {
+              point: center,
+              topmost,
+              topmostIgnoringPointerEvents: topmostIgnoring,
+              stack,
+              elementIndex,
+              blocked: elementIndex > 0,
+            };
           }
         } catch {
           // hit-testing is best-effort
@@ -533,6 +574,26 @@ export function registerInspectElement(server: McpServer): void {
           // transform chain is best-effort
         }
 
+        let contentQuads: Array<{ x: number; y: number; width: number; height: number }> | null = null;
+        try {
+          const client = connection.client;
+          const quadsResult = await (client.DOM as any).getContentQuads({ nodeId: node.nodeId });
+          if (quadsResult.quads && quadsResult.quads.length > 1) {
+            contentQuads = quadsResult.quads.map((q: number[]) => {
+              const xs = [q[0], q[2], q[4], q[6]];
+              const ys = [q[1], q[3], q[5], q[7]];
+              return {
+                x: Math.round(Math.min(...xs)),
+                y: Math.round(Math.min(...ys)),
+                width: Math.round(Math.max(...xs) - Math.min(...xs)),
+                height: Math.round(Math.max(...ys) - Math.min(...ys)),
+              };
+            });
+          }
+        } catch {
+          // getContentQuads may not be available
+        }
+
         let text = formatElement(node, tree);
 
         if (reactComponent) {
@@ -557,12 +618,17 @@ export function registerInspectElement(server: McpServer): void {
 
         if (hitTestResult) {
           text += `\n\nHIT-TEST (center ${hitTestResult.point.x},${hitTestResult.point.y}):`;
+          text += `\n  topmost (receives click): ${hitTestResult.topmost}`;
+          if (hitTestResult.topmostIgnoringPointerEvents !== hitTestResult.topmost) {
+            text += `\n  topmost (ignoring pointer-events): ${hitTestResult.topmostIgnoringPointerEvents}`;
+          }
+          text += "\n  stack:";
           for (let i = 0; i < hitTestResult.stack.length; i++) {
             const marker = i === hitTestResult.elementIndex ? " <-- THIS ELEMENT" : "";
-            text += `\n  ${i}: ${hitTestResult.stack[i]}${marker}`;
+            text += `\n    ${i}: ${hitTestResult.stack[i]}${marker}`;
           }
-          if (hitTestResult.elementIndex > 0) {
-            text += `\n  ${hitTestResult.elementIndex} element(s) above — may block pointer events`;
+          if (hitTestResult.blocked) {
+            text += `\n  BLOCKED: ${hitTestResult.elementIndex} element(s) above this element`;
           }
         }
 
@@ -620,6 +686,14 @@ export function registerInspectElement(server: McpServer): void {
                 text += `\n    ${item.selector}: grow=${item.flexGrow} shrink=${item.flexShrink} basis=${item.flexBasis} (${item.width}x${item.height})`;
               }
             }
+          }
+        }
+
+        if (contentQuads && contentQuads.length > 1) {
+          text += `\n\nINLINE FRAGMENTS (${contentQuads.length} boxes):`;
+          for (let i = 0; i < contentQuads.length; i++) {
+            const q = contentQuads[i];
+            text += `\n  line ${i + 1}: ${q.width}x${q.height} at (${q.x}, ${q.y})`;
           }
         }
 

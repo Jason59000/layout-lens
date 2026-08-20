@@ -13,8 +13,9 @@
 | V5 | Features framework-specific | TERMINÉ | 2026-08-20 |
 | V6 | Responsive + modes spéciaux | TERMINÉ | 2026-08-20 |
 | V7 | Refactor observability + enrichissements CSS | TERMINÉ | 2026-08-20 |
-| V8 | Deep CDP data (containing block, paint, hit-test) | EN COURS | 2026-08-20 |
-| V9 | Nouveaux outils (accessibility, perf metrics) | À FAIRE | — |
+| V8 | Deep CDP data (containing block, paint, hit-test) | TERMINÉ | 2026-08-20 |
+| V9 | Nouveaux outils (accessibility, perf, watch_styles) | TERMINÉ | 2026-08-20 |
+| V10 | CDP advanced (native style search, resolveValues, LayerTree) | TERMINÉ | 2026-08-20 |
 
 ## V7 — Refactor observability (TERMINÉ)
 
@@ -37,9 +38,9 @@
 - [x] 8e. Clipping chain — tous les ancêtres qui clippent entre élément et viewport
 
 ### Batch 5 — Paint + fonts
-- [ ] 8f. Paint order (DOMSnapshot includePaintOrder) — ordre réel de peinture
+- [x] 8f. Paint order (DOMSnapshot includePaintOrder) — dans profile_rendering
 - [x] 8g. Font metrics / fallback (CSS.getPlatformFontsForNode) — police réellement utilisée
-- [ ] 8h. Text layout / inline text boxes (DOMSnapshot) — rectangles par ligne, wrap, ellipsis
+- [x] 8h. Inline text fragments (DOM.getContentQuads) — multi-quads pour wrap/ellipsis
 
 ### Batch 6 — Interaction + focus
 - [x] 8i. Focus chain — activeElement, tab order, inert, disabled, focus trap
@@ -55,30 +56,43 @@
 
 - [x] 9a. `inspect_accessibility` — arbre AX complet (CDP Accessibility.getFullAXTree)
 - [x] 9b. `get_performance_metrics` — métriques runtime (Performance.getMetrics)
-- [ ] 9c. Compositing layers dans profile_rendering (LayerTree)
-- [ ] 9d. Main-thread scroll reasons (LayerTree.ScrollRect)
-- [ ] 9e. Container queries actives — quels @container matchent
+- [x] 9c. Compositing layers dans profile_rendering (LayerTree)
+- [x] 9d. Main-thread scroll reasons (LayerTree.ScrollRect)
+- [x] 9e. `watch_styles` — CSS.trackComputedStyleUpdates
 - [ ] 9f. Scroll snap — scroll-snap-type/align + positions résolues
 - [ ] 9g. Safe area / visual viewport — layout vs visual viewport, env(safe-area-inset-*)
 
-## 14 outils MCP (après V7)
+## V10 — CDP Advanced (TERMINÉ)
+
+- [x] 10a. DOM.getNodeForLocation — hit-test natif avec ignorePointerEventsNone
+- [x] 10b. CSS.resolveValues — résoudre calc/em/%/var dans trace_property
+- [x] 10c. DOM.getNodesForSubtreeByStyle — search natif dans query_layout (findByStyle)
+- [x] 10d. DOM.getContentQuads — fragments inline multi-lignes dans inspect_element
+- [x] 10e. DOMSnapshot.captureSnapshot — paint order dans profile_rendering
+- [x] 10f. LayerTree — compositing layers, scroll reasons, sticky constraints dans profile_rendering
+- [x] 10g. CSS.trackComputedStyleUpdates — nouvel outil watch_styles
+
+## 17 outils MCP (après V10)
 
 | Outil | Mode | Description |
 |-------|------|-------------|
 | `inspect_layout` | batch | Vue globale layout tree + framework + Tailwind |
 | `get_scroll_tree` | batch | Arbre scroll containers + sticky |
-| `query_layout` | batch | Queries JS custom + responsive + colorScheme |
+| `query_layout` | batch | Queries JS + findByStyle natif + responsive + colorScheme |
 | `capture_page` | batch | Screenshot annoté + responsive + colorScheme |
-| `inspect_element` | full | CSS rules + events + React + CSS variables |
-| `trace_property` | full | Cascade CSS + media/container queries |
+| `inspect_element` | full | Deep: CSS, events, React, hit-test, clipping, fonts, grid/flex, transforms, quads |
+| `trace_property` | full | Cascade CSS + CSS.resolveValues (calc/em/%/var) |
 | `compare_elements` | full | Diff géométrique |
 | `detect_layout_shifts` | snapshot | CLS score + shift sources |
 | `check_animations` | snapshot | Animations stuck/hidden/running |
 | `compare_color_schemes` | snapshot | Dark/light mode comparison + contrast |
 | `check_interactive_states` | full | Hover/focus feedback + WCAG 2.4.7 |
 | `watch_dom_mutations` | monitor | DOM mutations over fixed duration |
-| `profile_rendering` | monitor | FPS + jank + frame distribution |
+| `watch_styles` | monitor | Computed style changes (CSS.trackComputedStyleUpdates) |
+| `profile_rendering` | monitor | FPS + jank + LayerTree (compositing, scroll reasons, sticky) |
 | `test_responsive` | multi | 6 viewports + overflow/visibility/layout diff |
+| `inspect_accessibility` | full | Arbre AX complet avec rôles, noms, états |
+| `get_performance_metrics` | snapshot | JS heap, DOM count, layout/script duration, navigation timing |
 
 ## Enrichissements intégrés
 
@@ -106,4 +120,6 @@
 | 2026-08-20 | V5 TERMINÉE — framework detection, React, Shadow DOM, Tailwind |
 | 2026-08-20 | V6 TERMINÉE — test_responsive, compare_color_schemes |
 | 2026-08-20 | V7 TERMINÉE — suppression détecteurs, repositionnement observability, enrichissements CSS (7 computed styles, media/container queries, CSS variables, fix vendor prefix) |
-| 2026-08-20 | V8 EN COURS — deep CDP data |
+| 2026-08-20 | V8 TERMINÉE — containing block, blended bg, hit-test, clipping, fonts, focus, interaction, scroll ownership, grid/flex, transforms |
+| 2026-08-20 | V9 TERMINÉE — inspect_accessibility, get_performance_metrics, watch_styles (3 nouveaux outils) |
+| 2026-08-20 | V10 TERMINÉE — DOM.getNodeForLocation, CSS.resolveValues, DOM.getNodesForSubtreeByStyle, DOM.getContentQuads, DOMSnapshot paint order, LayerTree (compositing, scroll reasons, sticky) |

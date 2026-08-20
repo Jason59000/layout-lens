@@ -146,7 +146,79 @@ Use to diagnose animation stuttering, scroll jank, or general rendering performa
 
         const raw = result.result.value as string;
         const data: FrameData = JSON.parse(raw);
-        const text = formatProfile(data);
+        let text = formatProfile(data);
+
+        try {
+          await (client as any).LayerTree.enable();
+          await new Promise(r => setTimeout(r, 200));
+
+          const layers: any[] = [];
+          const onLayer = (params: any) => {
+            if (params.layers) layers.push(...params.layers);
+          };
+          (client as any).LayerTree.layerTreeDidChange(onLayer);
+          await new Promise(r => setTimeout(r, 300));
+
+          if (layers.length > 0) {
+            text += `\n\nCOMPOSITING LAYERS: ${layers.length}`;
+
+            const withContent = layers.filter((l: any) => l.drawsContent);
+            text += `\n  drawing content: ${withContent.length}`;
+
+            const totalPaints = layers.reduce((sum: number, l: any) => sum + (l.paintCount || 0), 0);
+            text += `\n  total paint count: ${totalPaints}`;
+
+            const withScrollRects = layers.filter((l: any) => l.scrollRects && l.scrollRects.length > 0);
+            if (withScrollRects.length > 0) {
+              text += "\n\n  MAIN-THREAD SCROLL REASONS:";
+              for (const l of withScrollRects) {
+                const reasons = l.scrollRects.map((r: any) => r.type).join(", ");
+                text += `\n    layer ${l.layerId} (${l.width}x${l.height}): ${reasons}`;
+                if (l.paintCount > 50) text += ` [${l.paintCount} paints]`;
+              }
+            }
+
+            const withSticky = layers.filter((l: any) => l.stickyPositionConstraint);
+            if (withSticky.length > 0) {
+              text += "\n\n  STICKY CONSTRAINTS (from Blink):";
+              for (const l of withSticky) {
+                const sc = l.stickyPositionConstraint;
+                text += `\n    layer ${l.layerId}: sticky box ${sc.stickyBoxRect.x},${sc.stickyBoxRect.y} ${sc.stickyBoxRect.width}x${sc.stickyBoxRect.height}`;
+                text += ` in block ${sc.containingBlockRect.x},${sc.containingBlockRect.y} ${sc.containingBlockRect.width}x${sc.containingBlockRect.height}`;
+              }
+            }
+
+            const heavyPainters = layers
+              .filter((l: any) => l.paintCount > 10 && l.drawsContent)
+              .sort((a: any, b: any) => b.paintCount - a.paintCount)
+              .slice(0, 5);
+            if (heavyPainters.length > 0) {
+              text += "\n\n  HEAVY PAINTERS (top 5):";
+              for (const l of heavyPainters) {
+                text += `\n    layer ${l.layerId}: ${l.paintCount} paints, ${l.width}x${l.height}`;
+              }
+            }
+          }
+        } catch {
+          // LayerTree enrichment is best-effort
+        }
+
+        try {
+          const snapshot = await (client as any).DOMSnapshot.captureSnapshot({
+            computedStyles: [],
+            includePaintOrder: true,
+          });
+
+          if (snapshot.documents?.[0]?.layout?.paintOrders) {
+            const paintOrders: number[] = snapshot.documents[0].layout.paintOrders;
+            if (paintOrders.length > 0) {
+              const maxPaint = Math.max(...paintOrders);
+              text += `\n\nPAINT ORDER: ${paintOrders.length} elements, range 0-${maxPaint}`;
+            }
+          }
+        } catch {
+          // DOMSnapshot paint order is best-effort
+        }
 
         return {
           content: [{ type: "text", text }],

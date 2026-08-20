@@ -102,6 +102,7 @@ Available variables:
 - tree: LayoutNode — root node (html)
 - viewport: {width, height}
 - find(selector): LayoutNode[] — find by tag, #id, .class
+- findByStyle([{name, value}]): Promise<LayoutNode[]> — native CDP search by computed style (fast, pierces shadow DOM)
 - ancestors(node): LayoutNode[] — parent chain up to root
 - descendants(node): LayoutNode[] — all children recursively
 - intersects(a, b): boolean — do two nodes' rects overlap?
@@ -114,7 +115,8 @@ Examples:
 - "nodes.filter(n => n.computed.overflowX === 'hidden' && n.scroll.scrollWidth > n.scroll.clientWidth)"
 - "nodes.filter(n => n.stacking.createsContext).map(n => ({sel: n.selector, reason: n.stacking.contextReason, z: n.computed.zIndex}))"
 - "ancestors(find('.my-element')[0])"
-- "nodes.filter(n => n.tag === 'img' && n.naturalSize && Math.abs(n.naturalSize.width/n.naturalSize.height - n.boxModel.total.width/n.boxModel.total.height) > 0.1)"`,
+- "nodes.filter(n => n.tag === 'img' && n.naturalSize && Math.abs(n.naturalSize.width/n.naturalSize.height - n.boxModel.total.width/n.boxModel.total.height) > 0.1)"
+- "findByStyle([{name: 'position', value: 'sticky'}])" — native CDP search, faster than JS filter`,
     {
       expression: z.string().describe("JavaScript expression to evaluate on the layout tree"),
       viewportWidth: z.number().optional().describe("Resize viewport width before extraction (for responsive testing)"),
@@ -162,11 +164,36 @@ Examples:
         }
         setParentIds(layoutTree.root);
 
+        // Native style search via CDP — filters in Blink, much faster than JS filtering
+        const nativeStyleSearch = async (styles: Array<{ name: string; value: string }>): Promise<LayoutNode[]> => {
+          try {
+            const client = connection!.client;
+            const { root } = await client.DOM.getDocument({ depth: 0 });
+            const result = await (client.DOM as any).getNodesForSubtreeByStyle({
+              nodeId: root.nodeId,
+              computedStyles: styles.map(s => ({ name: s.name, value: s.value })),
+              pierce: true,
+            });
+            if (!result.nodeIds || result.nodeIds.length === 0) return [];
+            const nodeIdSet = new Set<number>(result.nodeIds as number[]);
+            return allNodes.filter(n => nodeIdSet.has(n.nodeId));
+          } catch {
+            return allNodes.filter(n => {
+              const computed = n.computed as unknown as Record<string, string | undefined>;
+              return styles.every(s => {
+                const camel = s.name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+                return computed[camel] === s.value;
+              });
+            });
+          }
+        };
+
         const sandbox = {
           nodes: allNodes,
           tree: layoutTree.root,
           viewport: layoutTree.viewport,
           find: (sel: string) => findBySelector(allNodes, sel),
+          findByStyle: (styles: Array<{ name: string; value: string }>) => nativeStyleSearch(styles),
           ancestors: (node: LayoutNode) => getAncestors(allNodes, node),
           descendants: (node: LayoutNode) => getDescendants(node),
           intersects: (a: LayoutNode, b: LayoutNode) =>
@@ -176,11 +203,15 @@ Examples:
           undefined, NaN, Infinity,
         };
 
-        const result = runInNewContext(
+        let result = runInNewContext(
           `"use strict"; (${params.expression})`,
           sandbox,
           { timeout: 5000 },
         );
+
+        if (result && typeof result === "object" && typeof result.then === "function") {
+          result = await result;
+        }
 
         const text = formatResult(result);
 
