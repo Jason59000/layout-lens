@@ -28,17 +28,17 @@
 ## V8 — Deep CDP data (EN COURS)
 
 ### Batch 3 — Données structurelles
-- [ ] 8a. Containing block — quel élément contraint position absolute/fixed/sticky
-- [ ] 8b. Blended background colors (DOMSnapshot.captureSnapshot)
+- [x] 8a. Containing block — quel élément contraint position absolute/fixed/sticky
+- [x] 8b. Blended background colors (CSS.getBackgroundColors)
 - [ ] 8c. CSS variable provenance graph — chaîne --var → --var → source
 
 ### Batch 4 — Hit-testing + clipping
-- [ ] 8d. Hit-testing réel — elementsFromPoint, topmost element, overlays
-- [ ] 8e. Clipping chain — tous les ancêtres qui clippent entre élément et viewport
+- [x] 8d. Hit-testing réel — elementsFromPoint, topmost element, overlays
+- [x] 8e. Clipping chain — tous les ancêtres qui clippent entre élément et viewport
 
 ### Batch 5 — Paint + fonts
 - [ ] 8f. Paint order (DOMSnapshot includePaintOrder) — ordre réel de peinture
-- [ ] 8g. Font metrics / fallback (CSS.getPlatformFontsForNode) — police réellement utilisée
+- [x] 8g. Font metrics / fallback (CSS.getPlatformFontsForNode) — police réellement utilisée
 - [ ] 8h. Text layout / inline text boxes (DOMSnapshot) — rectangles par ligne, wrap, ellipsis
 
 ### Batch 6 — Interaction + focus

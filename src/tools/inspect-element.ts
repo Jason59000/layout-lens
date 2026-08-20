@@ -223,6 +223,104 @@ export function registerInspectElement(server: McpServer): void {
           // containing block detection is best-effort
         }
 
+        let hitTestResult: { point: { x: number; y: number }; elementIndex: number; stack: string[] } | null = null;
+        try {
+          const client = connection.client;
+          const escapedSel2 = JSON.stringify(params.selector);
+          const htResult = await client.Runtime.evaluate({
+            expression: `(function() {
+              var el = document.querySelector(${escapedSel2});
+              if (!el) return null;
+              var rect = el.getBoundingClientRect();
+              var cx = rect.left + rect.width / 2;
+              var cy = rect.top + rect.height / 2;
+              var stack = document.elementsFromPoint(cx, cy);
+              var idx = stack.indexOf(el);
+              return JSON.stringify({
+                point: { x: Math.round(cx), y: Math.round(cy) },
+                elementIndex: idx,
+                stack: stack.slice(0, 10).map(function(e) {
+                  var t = e.tagName.toLowerCase();
+                  if (e.id) t += "#" + e.id;
+                  else if (e.className && typeof e.className === "string") {
+                    var cls = e.className.split(/\\s+/).filter(Boolean);
+                    if (cls.length > 0) t += "." + cls[0];
+                  }
+                  return t;
+                })
+              });
+            })()`,
+            returnByValue: true,
+          });
+          if (htResult.result.value) {
+            hitTestResult = JSON.parse(htResult.result.value as string);
+          }
+        } catch {
+          // hit-testing is best-effort
+        }
+
+        let clippingChain: Array<{ selector: string; reasons: string[] }> | null = null;
+        try {
+          const client = connection.client;
+          const escapedSel3 = JSON.stringify(params.selector);
+          const clipResult = await client.Runtime.evaluate({
+            expression: `(function() {
+              var el = document.querySelector(${escapedSel3});
+              if (!el) return null;
+              var clips = [];
+              var p = el.parentElement;
+              while (p && p !== document.documentElement) {
+                var cs = getComputedStyle(p);
+                var reasons = [];
+                if (cs.overflowX !== "visible" || cs.overflowY !== "visible") {
+                  reasons.push("overflow: " + cs.overflowX + "/" + cs.overflowY);
+                }
+                if (cs.clipPath && cs.clipPath !== "none") {
+                  reasons.push("clip-path: " + cs.clipPath);
+                }
+                if (cs.contain) {
+                  var cnt = cs.contain;
+                  if (cnt === "paint" || cnt === "strict" || cnt === "content" || cnt.includes("paint")) {
+                    reasons.push("contain: " + cnt);
+                  }
+                }
+                if (reasons.length > 0) {
+                  var t = p.tagName.toLowerCase();
+                  if (p.id) t += "#" + p.id;
+                  else if (p.className && typeof p.className === "string") {
+                    var c = p.className.split(/\\s+/).filter(Boolean);
+                    if (c.length > 0) t += "." + c[0];
+                  }
+                  clips.push({ selector: t, reasons: reasons });
+                }
+                p = p.parentElement;
+              }
+              return clips.length > 0 ? JSON.stringify(clips) : null;
+            })()`,
+            returnByValue: true,
+          });
+          if (clipResult.result.value) {
+            clippingChain = JSON.parse(clipResult.result.value as string);
+          }
+        } catch {
+          // clipping chain is best-effort
+        }
+
+        let platformFonts: Array<{ familyName: string; postScriptName: string; glyphCount: number }> = [];
+        try {
+          const client = connection.client;
+          const fontsResult = await (client.CSS as any).getPlatformFontsForNode({ nodeId: node.nodeId });
+          if (fontsResult.fonts && fontsResult.fonts.length > 0) {
+            platformFonts = fontsResult.fonts.map((f: any) => ({
+              familyName: f.familyName,
+              postScriptName: f.postScriptName || "",
+              glyphCount: f.glyphCount,
+            }));
+          }
+        } catch {
+          // getPlatformFontsForNode may not be available
+        }
+
         let text = formatElement(node, tree);
 
         if (reactComponent) {
@@ -243,6 +341,34 @@ export function registerInspectElement(server: McpServer): void {
 
         if (eventListeners.length > 0) {
           text += `\n\nEVENT LISTENERS:\n  ${eventListeners.join("\n  ")}`;
+        }
+
+        if (hitTestResult) {
+          text += `\n\nHIT-TEST (center ${hitTestResult.point.x},${hitTestResult.point.y}):`;
+          for (let i = 0; i < hitTestResult.stack.length; i++) {
+            const marker = i === hitTestResult.elementIndex ? " <-- THIS ELEMENT" : "";
+            text += `\n  ${i}: ${hitTestResult.stack[i]}${marker}`;
+          }
+          if (hitTestResult.elementIndex > 0) {
+            text += `\n  ${hitTestResult.elementIndex} element(s) above — may block pointer events`;
+          }
+        }
+
+        if (clippingChain && clippingChain.length > 0) {
+          text += "\n\nCLIPPING CHAIN:";
+          for (const clip of clippingChain) {
+            text += `\n  ${clip.selector}: ${clip.reasons.join(", ")}`;
+          }
+        }
+
+        if (platformFonts.length > 0) {
+          text += "\n\nFONTS (actual):";
+          for (const f of platformFonts) {
+            text += `\n  ${f.familyName} (${f.glyphCount} glyphs)`;
+            if (f.postScriptName) text += ` [${f.postScriptName}]`;
+          }
+          const declared = node.computed.fontSize ? `font-size: ${node.computed.fontSize}` : "";
+          if (declared) text += `\n  ${declared}`;
         }
 
         if (cssVariables.length > 0) {
