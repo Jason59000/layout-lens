@@ -117,6 +117,8 @@ Examples:
 - "nodes.filter(n => n.tag === 'img' && n.naturalSize && Math.abs(n.naturalSize.width/n.naturalSize.height - n.boxModel.total.width/n.boxModel.total.height) > 0.1)"`,
     {
       expression: z.string().describe("JavaScript expression to evaluate on the layout tree"),
+      viewportWidth: z.number().optional().describe("Resize viewport width before extraction (for responsive testing)"),
+      viewportHeight: z.number().optional().describe("Resize viewport height before extraction (for responsive testing)"),
       port: z.number().optional().describe("Chrome debugging port (default: 9222)"),
       host: z.string().optional().describe("Chrome debugging host (default: localhost)"),
     },
@@ -127,6 +129,16 @@ Examples:
           host: params.host,
           port: params.port,
         });
+
+        if (params.viewportWidth || params.viewportHeight) {
+          await connection.client.Emulation.setDeviceMetricsOverride({
+            width: params.viewportWidth ?? 0,
+            height: params.viewportHeight ?? 0,
+            deviceScaleFactor: 1,
+            mobile: (params.viewportWidth ?? 1024) < 768,
+          });
+          await new Promise(r => setTimeout(r, 200));
+        }
 
         const extractor = new LayoutExtractor(connection);
         const layoutTree = await extractor.extractTree({ lightweight: true });
@@ -164,11 +176,18 @@ Examples:
 
         const text = formatResult(result);
 
+        if (params.viewportWidth || params.viewportHeight) {
+          await connection.client.Emulation.clearDeviceMetricsOverride();
+        }
+
         return {
           content: [{ type: "text", text }],
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
+        if (connection && (params.viewportWidth || params.viewportHeight)) {
+          await connection.client.Emulation.clearDeviceMetricsOverride().catch(() => {});
+        }
         return {
           content: [{ type: "text", text: `QUERY ERROR: ${message}` }],
           isError: true,

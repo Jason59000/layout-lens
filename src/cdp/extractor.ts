@@ -48,6 +48,10 @@ interface BatchNode {
   nw?: number; nh?: number;
   // Direct text content (truncated)
   txt?: string;
+  // Accessibility
+  a11y?: { role?: string; label?: string; hidden?: boolean; tabIndex?: number };
+  // Pseudo-elements
+  pseudos?: Array<{ type: string; content: string; display: string; position: string; width: string; height: string }>;
   // Children
   ch: BatchNode[];
 }
@@ -148,6 +152,27 @@ const BATCH_EXTRACT_JS = `(function() {
     }
     txt = txt.trim();
     if (txt) n.txt = txt.length > 200 ? txt.slice(0, 200) + "..." : txt;
+    var role = el.getAttribute("role") || "";
+    var ariaLabel = el.getAttribute("aria-label") || "";
+    var ariaHidden = el.getAttribute("aria-hidden");
+    var tabIdx = el.getAttribute("tabindex");
+    if (role || ariaLabel || ariaHidden !== null || tabIdx !== null) {
+      n.a11y = {};
+      if (role) n.a11y.role = role;
+      if (ariaLabel) n.a11y.label = ariaLabel;
+      if (ariaHidden !== null) n.a11y.hidden = ariaHidden === "true";
+      if (tabIdx !== null) n.a11y.tabIndex = parseInt(tabIdx, 10);
+    }
+    var pseudos = [];
+    var psBefore = getComputedStyle(el, "::before");
+    if (psBefore.content && psBefore.content !== "none" && psBefore.content !== "normal") {
+      pseudos.push({ type: "before", content: psBefore.content, display: psBefore.display, position: psBefore.position, width: psBefore.width, height: psBefore.height });
+    }
+    var psAfter = getComputedStyle(el, "::after");
+    if (psAfter.content && psAfter.content !== "none" && psAfter.content !== "normal") {
+      pseudos.push({ type: "after", content: psAfter.content, display: psAfter.display, position: psAfter.position, width: psAfter.width, height: psAfter.height });
+    }
+    if (pseudos.length > 0) n.pseudos = pseudos;
     return n;
   }
   var root = walk(document.documentElement, 1, 1);
@@ -468,6 +493,21 @@ export class LayoutExtractor {
 
     if (raw.txt) {
       node.textContent = raw.txt;
+    }
+
+    if (raw.a11y) {
+      node.a11y = raw.a11y;
+    }
+
+    if (raw.pseudos && raw.pseudos.length > 0) {
+      node.pseudoElements = raw.pseudos.map(p => ({
+        type: p.type as "before" | "after",
+        content: p.content,
+        display: p.display,
+        position: p.position,
+        width: p.width,
+        height: p.height,
+      }));
     }
 
     return node;

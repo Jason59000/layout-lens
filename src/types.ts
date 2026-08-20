@@ -110,6 +110,20 @@ export interface LayoutNode {
   timestamp?: number;
   naturalSize?: { width: number; height: number };
   textContent?: string;
+  pseudoElements?: Array<{
+    type: "before" | "after";
+    content: string;
+    display: string;
+    position: string;
+    width: string;
+    height: string;
+  }>;
+  a11y?: {
+    role?: string;
+    label?: string;
+    hidden?: boolean;
+    tabIndex?: number;
+  };
 }
 
 export interface LayoutTree {

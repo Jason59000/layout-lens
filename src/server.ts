@@ -8,13 +8,14 @@ import { registerTraceProperty } from "./tools/trace-property.js";
 import { registerCompareElements } from "./tools/compare-elements.js";
 import { registerGetScrollTree } from "./tools/get-scroll-tree.js";
 import { registerQueryLayout } from "./tools/query-layout.js";
+import { registerCapturePage } from "./tools/capture-page.js";
 
 const server = new McpServer({
   name: "layout-lens",
   version: "0.1.0",
 });
 
-// Register all 7 layout analysis tools
+// Register all 8 layout analysis tools
 registerInspectLayout(server);
 registerInspectElement(server);
 registerFindIssues(server);
@@ -22,6 +23,7 @@ registerTraceProperty(server);
 registerCompareElements(server);
 registerGetScrollTree(server);
 registerQueryLayout(server);
+registerCapturePage(server);
 
 async function main() {
   const transport = new StdioServerTransport();
