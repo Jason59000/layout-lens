@@ -56,6 +56,8 @@ interface BatchNode {
   pseudos?: Array<{ type: string; content: string; display: string; position: string; width: string; height: string }>;
   // Shadow DOM
   shadowRoot?: boolean;
+  // Containing block
+  cb?: { sel: string; reason: string };
   // Children
   ch: BatchNode[];
 }
@@ -110,6 +112,56 @@ const BATCH_EXTRACT_JS = `(function() {
   ];
   var nid = 1;
   function px(v) { return parseFloat(v) || 0; }
+  function cbDesc(e) {
+    var t = e.tagName.toLowerCase();
+    if (e.id) return t + "#" + e.id;
+    var cn = e.className;
+    if (cn && typeof cn === "string") {
+      var c = cn.split(/\\s+/).filter(Boolean);
+      if (c.length > 0) return t + "." + c[0];
+    }
+    return t;
+  }
+  function findCB(el) {
+    var pos = getComputedStyle(el).position;
+    if (pos === "static" || pos === "relative") return null;
+    if (pos === "absolute") {
+      var p = el.parentElement;
+      while (p && p !== document.documentElement) {
+        if (getComputedStyle(p).position !== "static") {
+          return { sel: cbDesc(p), reason: "position: " + getComputedStyle(p).position };
+        }
+        p = p.parentElement;
+      }
+      return { sel: "viewport", reason: "initial containing block" };
+    }
+    if (pos === "fixed") {
+      var p = el.parentElement;
+      while (p && p !== document.documentElement) {
+        var pcs = getComputedStyle(p);
+        if (pcs.transform !== "none") return { sel: cbDesc(p), reason: "transform" };
+        if (pcs.filter !== "none") return { sel: cbDesc(p), reason: "filter" };
+        var cnt = pcs.contain;
+        if (cnt === "paint" || cnt === "layout" || cnt === "strict" || cnt === "content") {
+          return { sel: cbDesc(p), reason: "contain: " + cnt };
+        }
+        p = p.parentElement;
+      }
+      return { sel: "viewport", reason: "fixed positioning" };
+    }
+    if (pos === "sticky") {
+      var p = el.parentElement;
+      while (p && p !== document.documentElement) {
+        var pcs = getComputedStyle(p);
+        if (pcs.overflowX !== "visible" || pcs.overflowY !== "visible") {
+          return { sel: cbDesc(p), reason: "overflow: " + pcs.overflowX + "/" + pcs.overflowY };
+        }
+        p = p.parentElement;
+      }
+      return { sel: "viewport", reason: "no overflow ancestor" };
+    }
+    return null;
+  }
   function walk(el, ci, sc) {
     var tag = el.tagName;
     if (SKIP[tag]) return null;
@@ -176,6 +228,8 @@ const BATCH_EXTRACT_JS = `(function() {
       stickyLeft: v["left"], stickyRight: v["right"],
       ch: ch
     };
+    var cbInfo = findCB(el);
+    if (cbInfo) n.cb = cbInfo;
     if (tag === "IMG") { n.nw = el.naturalWidth; n.nh = el.naturalHeight; }
     var txt = "";
     for (var k = 0; k < el.childNodes.length; k++) {
@@ -588,6 +642,10 @@ export class LayoutExtractor {
 
     if (raw.shadowRoot) {
       node.shadowRoot = true;
+    }
+
+    if (raw.cb) {
+      node.containingBlock = { selector: raw.cb.sel, reason: raw.cb.reason };
     }
 
     return node;

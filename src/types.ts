@@ -134,6 +134,8 @@ export interface LayoutNode {
     tabIndex?: number;
   };
   shadowRoot?: boolean;
+  containingBlock?: { selector: string; reason: string };
+  blendedBackgroundColor?: string;
 }
 
 export interface LayoutTree {

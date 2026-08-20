@@ -12,42 +12,65 @@
 | V4 | Monitoring temps réel | TERMINÉ | 2026-08-20 |
 | V5 | Features framework-specific | TERMINÉ | 2026-08-20 |
 | V6 | Responsive + modes spéciaux | TERMINÉ | 2026-08-20 |
-| OS | Open source ready (tests, CI, README, auto-launch) | EN ATTENTE | — |
+| V7 | Refactor observability + enrichissements CSS | TERMINÉ | 2026-08-20 |
+| V8 | Deep CDP data (containing block, paint, hit-test) | EN COURS | 2026-08-20 |
+| V9 | Nouveaux outils (accessibility, perf metrics) | À FAIRE | — |
 
-## Détail V4 — Monitoring temps réel (TERMINÉ)
+## V7 — Refactor observability (TERMINÉ)
 
-- [x] 4a. `detect_layout_shifts` — CLS detection via Performance API
-- [x] 4b. `check_animations` — stuck/hidden animation detection
-- [x] 4c. `check_interactive_states` — hover/focus pseudo-state testing (WCAG 2.4.7)
-- [x] 4d. `watch_dom_mutations` — DOM mutation monitoring over fixed duration
-- [x] 4e. `profile_rendering` — frame timing via requestAnimationFrame, jank detection
+- [x] Suppression des 10 détecteurs + find_issues (repositionnement observability)
+- [x] Utilities (walkTree, etc.) relocalisées dans types.ts
+- [x] Batch 1 : pointer-events, cursor, touch-action, contain, content-visibility, container-type, aspect-ratio
+- [x] Batch 2 : media queries + container queries sur CSSRuleSource, CSS variables sur inspect_element
+- [x] Fix filtre vendor prefix (permet --custom-properties dans les CSS rules)
+- [x] README reécrit (observability layer, pas détection)
 
-## Détail V5 — Framework-specific (TERMINÉ)
+## V8 — Deep CDP data (EN COURS)
 
-- [x] 5a. Framework auto-detection (React/Vue/Angular/Svelte/Next.js/Nuxt)
-- [x] 5b. React component mapping in inspect_element (fiber tree walk)
-- [x] 5e. Shadow DOM piercing in batch extraction
-- [x] 5f. Tailwind CSS diagnostic enrichment (suggestTailwindFix)
+### Batch 3 — Données structurelles
+- [ ] 8a. Containing block — quel élément contraint position absolute/fixed/sticky
+- [ ] 8b. Blended background colors (DOMSnapshot.captureSnapshot)
+- [ ] 8c. CSS variable provenance graph — chaîne --var → --var → source
 
-## Détail V6 — Responsive + modes spéciaux (TERMINÉ)
+### Batch 4 — Hit-testing + clipping
+- [ ] 8d. Hit-testing réel — elementsFromPoint, topmost element, overlays
+- [ ] 8e. Clipping chain — tous les ancêtres qui clippent entre élément et viewport
 
-- [x] 6a. Viewport resize — intégré dans query_layout et capture_page
-- [x] 6a. `test_responsive` — multi-viewport auto (6 breakpoints, diff engine)
-- [x] 6b. `compare_color_schemes` — dark mode comparison + colorScheme param
-- [ ] 6c. Print layout (déprio — niche)
-- [ ] 6d. RTL (déprio — marchés spécifiques)
+### Batch 5 — Paint + fonts
+- [ ] 8f. Paint order (DOMSnapshot includePaintOrder) — ordre réel de peinture
+- [ ] 8g. Font metrics / fallback (CSS.getPlatformFontsForNode) — police réellement utilisée
+- [ ] 8h. Text layout / inline text boxes (DOMSnapshot) — rectangles par ligne, wrap, ellipsis
 
-## 15 outils MCP
+### Batch 6 — Interaction + focus
+- [ ] 8i. Focus chain — activeElement, tab order, inert, disabled, focus trap
+- [ ] 8j. Interaction state — combinaison pointer-events/inert/disabled/aria-disabled/hidden
+- [ ] 8k. Scroll ownership chain — élément → scroll container → clip → sticky capture
+
+### Batch 7 — Layout avancé
+- [ ] 8l. Grid/Flex resolved geometry — tracks résolues, placement items
+- [ ] 8m. Layout constraints — pourquoi cet élément fait exactement Npx
+- [ ] 8n. Transforms résolues — matrice finale, transform origin, chaîne ancestrale
+
+## V9 — Nouveaux outils
+
+- [ ] 9a. `inspect_accessibility` — arbre AX complet (CDP Accessibility.getFullAXTree)
+- [ ] 9b. `get_performance_metrics` — métriques runtime (Performance.getMetrics)
+- [ ] 9c. Compositing layers dans profile_rendering (LayerTree)
+- [ ] 9d. Main-thread scroll reasons (LayerTree.ScrollRect)
+- [ ] 9e. Container queries actives — quels @container matchent
+- [ ] 9f. Scroll snap — scroll-snap-type/align + positions résolues
+- [ ] 9g. Safe area / visual viewport — layout vs visual viewport, env(safe-area-inset-*)
+
+## 14 outils MCP (après V7)
 
 | Outil | Mode | Description |
 |-------|------|-------------|
-| `inspect_layout` | batch | Vue globale + tous les issues + framework detection |
-| `find_issues` | batch | Issues filtrées par catégorie + Tailwind suggestions |
+| `inspect_layout` | batch | Vue globale layout tree + framework + Tailwind |
 | `get_scroll_tree` | batch | Arbre scroll containers + sticky |
 | `query_layout` | batch | Queries JS custom + responsive + colorScheme |
 | `capture_page` | batch | Screenshot annoté + responsive + colorScheme |
-| `inspect_element` | full | CSS rules + event listeners + React component |
-| `trace_property` | full | Cascade CSS d'une propriété |
+| `inspect_element` | full | CSS rules + events + React + CSS variables |
+| `trace_property` | full | Cascade CSS + media/container queries |
 | `compare_elements` | full | Diff géométrique |
 | `detect_layout_shifts` | snapshot | CLS score + shift sources |
 | `check_animations` | snapshot | Animations stuck/hidden/running |
@@ -59,32 +82,28 @@
 
 ## Enrichissements intégrés
 
-- Framework detection dans inspect_layout header
-- Tailwind class suggestions dans les diagnostics
+- Framework detection (React/Vue/Angular/Svelte/Next.js/Nuxt)
 - React component name/hierarchy dans inspect_element
+- Tailwind CSS detection dans inspect_layout
 - Shadow DOM piercing dans batch extraction
-- Pseudo-elements (::before/::after) dans batch extraction
-- Accessibility data (role, aria-label, aria-hidden, tabindex)
-
-## Vagues
-
-- [V1 — CDP Core](waves/v1-cdp-core.md)
-- [V2 — Détecteurs + Diagnostics](waves/v2-detectors-diagnostics.md)
-- [V3 — Assemblage final](waves/v3-assembly.md)
-- [V4 — Monitoring temps réel](waves/v4-monitoring-realtime.md)
-- [V5 — Features framework-specific](waves/v5-framework-specific.md)
-- [V6 — Responsive + modes spéciaux](waves/v6-responsive-modes.md)
+- Pseudo-elements (::before/::after)
+- Accessibility basique (role, aria-label, aria-hidden, tabindex)
+- CSS variables sur inspect_element
+- Media queries + container queries sur les CSS rules
+- pointer-events, cursor, touch-action, contain, content-visibility, container-type, aspect-ratio
 
 ## Journal de bord
 
 | Date | Événement |
 |------|-----------|
-| 2026-08-20 | Projet initialisé. Repo GitHub créé (Jason59000/layout-lens). Setup TS + deps. Types définis. |
-| 2026-08-20 | V1 TERMINÉE — connection.ts + extractor.ts. 866 lignes. |
-| 2026-08-20 | V2 TERMINÉE — 10 détecteurs + 3 diagnostics. 3,010 lignes. |
-| 2026-08-20 | V3 TERMINÉE — formatter + 6 outils MCP + server. 1,284 lignes. |
-| 2026-08-20 | V3.1 — batch extraction (1000x speedup), query_layout, vm sandbox |
-| 2026-08-20 | V3.2 — capture_page, pseudo-éléments, a11y, responsive, event listeners |
-| 2026-08-20 | V4 TERMINÉE — 5 monitoring tools (CLS, animations, hover/focus, DOM mutations, rendering) |
-| 2026-08-20 | V5 TERMINÉE — framework detection, React component mapping, Shadow DOM, Tailwind diagnostics |
-| 2026-08-20 | V6 TERMINÉE — test_responsive (6 viewports), compare_color_schemes (dark mode) |
+| 2026-08-20 | Projet initialisé. Repo GitHub créé (Jason59000/layout-lens). |
+| 2026-08-20 | V1 TERMINÉE — connection.ts + extractor.ts |
+| 2026-08-20 | V2 TERMINÉE — 10 détecteurs + 3 diagnostics |
+| 2026-08-20 | V3 TERMINÉE — formatter + 6 outils MCP + server |
+| 2026-08-20 | V3.1 — batch extraction, query_layout, vm sandbox |
+| 2026-08-20 | V3.2 — capture_page, pseudo-éléments, a11y, responsive |
+| 2026-08-20 | V4 TERMINÉE — 5 monitoring tools |
+| 2026-08-20 | V5 TERMINÉE — framework detection, React, Shadow DOM, Tailwind |
+| 2026-08-20 | V6 TERMINÉE — test_responsive, compare_color_schemes |
+| 2026-08-20 | V7 TERMINÉE — suppression détecteurs, repositionnement observability, enrichissements CSS (7 computed styles, media/container queries, CSS variables, fix vendor prefix) |
+| 2026-08-20 | V8 EN COURS — deep CDP data |

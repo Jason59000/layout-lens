@@ -54,6 +54,10 @@ function describeNodeWithHints(node: LayoutNode): string {
     }
   }
 
+  if (node.containingBlock) {
+    hints.push(`cb: ${node.containingBlock.selector}`);
+  }
+
   if (hints.length > 0) {
     label += ", " + hints.join(", ");
   }
@@ -164,6 +168,12 @@ export function formatElement(
   out.push(`  top: ${Math.round(bm.total.y)}  left: ${Math.round(bm.total.x)}`);
   out.push("");
 
+  if (node.containingBlock) {
+    out.push("CONTAINING BLOCK:");
+    out.push(`  ${node.containingBlock.selector} (${node.containingBlock.reason})`);
+    out.push("");
+  }
+
   if (parent) {
     out.push("PARENT RELATIONSHIP:");
     out.push(`  parent: ${formatSelector(parent)} (${Math.round(parent.boxModel.content.width)} x ${Math.round(parent.boxModel.content.height)})`);
@@ -269,6 +279,13 @@ export function formatElement(
     if (val && val !== "visible" && val !== "auto" && val !== "none" && val !== "normal" && val !== "0px") {
       out.push(`  ${prop}: ${val}`);
     }
+  }
+
+  if (node.blendedBackgroundColor) {
+    out.push("");
+    out.push("BACKGROUND:");
+    out.push(`  declared: ${node.computed.backgroundColor ?? "transparent"}`);
+    out.push(`  blended (visible): ${node.blendedBackgroundColor}`);
   }
 
   if (node.naturalSize) {

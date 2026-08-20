@@ -145,6 +145,84 @@ export function registerInspectElement(server: McpServer): void {
           // CSS domain may not be available
         }
 
+        let blendedBackgroundColor: string | undefined;
+        try {
+          const client = connection.client;
+          const bgResult = await (client.CSS as any).getBackgroundColors({ nodeId: node.nodeId });
+          if (bgResult.backgroundColors && bgResult.backgroundColors.length > 0) {
+            blendedBackgroundColor = bgResult.backgroundColors[0];
+          }
+        } catch {
+          // getBackgroundColors may not be available
+        }
+
+        let containingBlock: { selector: string; reason: string } | undefined;
+        try {
+          const client = connection.client;
+          const escapedSel = JSON.stringify(params.selector);
+          const cbResult = await client.Runtime.evaluate({
+            expression: `(function() {
+              var el = document.querySelector(${escapedSel});
+              if (!el) return null;
+              var cs = getComputedStyle(el);
+              var pos = cs.position;
+              if (pos === "static" || pos === "relative") return null;
+              function desc(e) {
+                var t = e.tagName.toLowerCase();
+                if (e.id) return t + "#" + e.id;
+                var cn = e.className;
+                if (cn && typeof cn === "string") {
+                  var c = cn.split(/\\s+/).filter(Boolean);
+                  if (c.length > 0) return t + "." + c[0];
+                }
+                return t;
+              }
+              if (pos === "absolute") {
+                var p = el.parentElement;
+                while (p && p !== document.documentElement) {
+                  if (getComputedStyle(p).position !== "static") {
+                    return JSON.stringify({ selector: desc(p), reason: "position: " + getComputedStyle(p).position });
+                  }
+                  p = p.parentElement;
+                }
+                return JSON.stringify({ selector: "viewport", reason: "initial containing block" });
+              }
+              if (pos === "fixed") {
+                var p = el.parentElement;
+                while (p && p !== document.documentElement) {
+                  var pcs = getComputedStyle(p);
+                  if (pcs.transform !== "none") return JSON.stringify({ selector: desc(p), reason: "transform" });
+                  if (pcs.filter !== "none") return JSON.stringify({ selector: desc(p), reason: "filter" });
+                  var cnt = pcs.contain;
+                  if (cnt === "paint" || cnt === "layout" || cnt === "strict" || cnt === "content") {
+                    return JSON.stringify({ selector: desc(p), reason: "contain: " + cnt });
+                  }
+                  p = p.parentElement;
+                }
+                return JSON.stringify({ selector: "viewport", reason: "fixed positioning" });
+              }
+              if (pos === "sticky") {
+                var p = el.parentElement;
+                while (p && p !== document.documentElement) {
+                  var pcs = getComputedStyle(p);
+                  if (pcs.overflowX !== "visible" || pcs.overflowY !== "visible") {
+                    return JSON.stringify({ selector: desc(p), reason: "overflow: " + pcs.overflowX + "/" + pcs.overflowY });
+                  }
+                  p = p.parentElement;
+                }
+                return JSON.stringify({ selector: "viewport", reason: "no overflow ancestor" });
+              }
+              return null;
+            })()`,
+            returnByValue: true,
+          });
+          if (cbResult.result.value) {
+            containingBlock = JSON.parse(cbResult.result.value as string);
+          }
+        } catch {
+          // containing block detection is best-effort
+        }
+
         let text = formatElement(node, tree);
 
         if (reactComponent) {
@@ -152,6 +230,15 @@ export function registerInspectElement(server: McpServer): void {
           const hierarchyLine = `\n  in: ${reactComponent.hierarchy.map(c => `<${c}>`).join(" > ")}`;
           const headerEnd = text.indexOf("\n");
           text = text.slice(0, headerEnd) + componentLine + hierarchyLine + text.slice(headerEnd);
+        }
+
+        if (containingBlock) {
+          text += `\n\nCONTAINING BLOCK:\n  ${containingBlock.selector} (${containingBlock.reason})`;
+        }
+
+        if (blendedBackgroundColor) {
+          const bgComp = node.computed.backgroundColor ?? "transparent";
+          text += `\n\nBACKGROUND:\n  declared: ${bgComp}\n  blended (visible): ${blendedBackgroundColor}`;
         }
 
         if (eventListeners.length > 0) {
