@@ -9,34 +9,62 @@
 | V3 | Formatter + Outils MCP + Server | TERMINÉ | 2026-08-20 |
 | V3.1 | Batch extraction + query_layout + stabilisation | TERMINÉ | 2026-08-20 |
 | V3.2 | Data enrichie + capture_page | TERMINÉ | 2026-08-20 |
-| V4 | Monitoring temps réel | EN ATTENTE | — |
-| V5 | Features framework-specific | EN ATTENTE | — |
-| V6 | Responsive + modes spéciaux | PARTIELLEMENT FAIT | — |
+| V4 | Monitoring temps réel | TERMINÉ | 2026-08-20 |
+| V5 | Features framework-specific | TERMINÉ | 2026-08-20 |
+| V6 | Responsive + modes spéciaux | TERMINÉ | 2026-08-20 |
 | OS | Open source ready (tests, CI, README, auto-launch) | EN ATTENTE | — |
 
-## Détail V3.1 — Stabilisation (TERMINÉ)
+## Détail V4 — Monitoring temps réel (TERMINÉ)
 
-- [x] Batch extraction via `Runtime.evaluate` (~150ms vs minutes)
-- [x] `query_layout` MCP tool (7ème outil) avec sandbox `vm.runInNewContext`
-- [x] Extraction textContent, color, backgroundColor, fontSize, lineHeight
-- [x] Switch inspect_layout/find_issues/get_scroll_tree en mode lightweight
-- [x] Pages de benchmark + test infra
+- [x] 4a. `detect_layout_shifts` — CLS detection via Performance API
+- [x] 4b. `check_animations` — stuck/hidden animation detection
+- [x] 4c. `check_interactive_states` — hover/focus pseudo-state testing (WCAG 2.4.7)
+- [x] 4d. `watch_dom_mutations` — DOM mutation monitoring over fixed duration
+- [x] 4e. `profile_rendering` — frame timing via requestAnimationFrame, jank detection
 
-## Détail V3.2 — Data enrichie (TERMINÉ)
+## Détail V5 — Framework-specific (TERMINÉ)
 
-- [x] `capture_page` MCP tool (8ème outil) — screenshot annoté avec overlays
-- [x] Pseudo-éléments (::before/::after) dans batch extract
-- [x] Accessibility data (role, aria-label, aria-hidden, tabindex)
-- [x] Viewport resize pour test responsive (query_layout + capture_page)
-- [x] Event listeners dans inspect_element via DOMDebugger
+- [x] 5a. Framework auto-detection (React/Vue/Angular/Svelte/Next.js/Nuxt)
+- [x] 5b. React component mapping in inspect_element (fiber tree walk)
+- [x] 5e. Shadow DOM piercing in batch extraction
+- [x] 5f. Tailwind CSS diagnostic enrichment (suggestTailwindFix)
 
-## V6 — Partiellement fait
+## Détail V6 — Responsive + modes spéciaux (TERMINÉ)
 
 - [x] 6a. Viewport resize — intégré dans query_layout et capture_page
-- [ ] 6a. Multi-viewport auto (boucle sur breakpoints + diff)
-- [ ] 6b. Dark mode comparison
-- [ ] 6c. Print layout
-- [ ] 6d. RTL
+- [x] 6a. `test_responsive` — multi-viewport auto (6 breakpoints, diff engine)
+- [x] 6b. `compare_color_schemes` — dark mode comparison + colorScheme param
+- [ ] 6c. Print layout (déprio — niche)
+- [ ] 6d. RTL (déprio — marchés spécifiques)
+
+## 15 outils MCP
+
+| Outil | Mode | Description |
+|-------|------|-------------|
+| `inspect_layout` | batch | Vue globale + tous les issues + framework detection |
+| `find_issues` | batch | Issues filtrées par catégorie + Tailwind suggestions |
+| `get_scroll_tree` | batch | Arbre scroll containers + sticky |
+| `query_layout` | batch | Queries JS custom + responsive + colorScheme |
+| `capture_page` | batch | Screenshot annoté + responsive + colorScheme |
+| `inspect_element` | full | CSS rules + event listeners + React component |
+| `trace_property` | full | Cascade CSS d'une propriété |
+| `compare_elements` | full | Diff géométrique |
+| `detect_layout_shifts` | snapshot | CLS score + shift sources |
+| `check_animations` | snapshot | Animations stuck/hidden/running |
+| `compare_color_schemes` | snapshot | Dark/light mode comparison + contrast |
+| `check_interactive_states` | full | Hover/focus feedback + WCAG 2.4.7 |
+| `watch_dom_mutations` | monitor | DOM mutations over fixed duration |
+| `profile_rendering` | monitor | FPS + jank + frame distribution |
+| `test_responsive` | multi | 6 viewports + overflow/visibility/layout diff |
+
+## Enrichissements intégrés
+
+- Framework detection dans inspect_layout header
+- Tailwind class suggestions dans les diagnostics
+- React component name/hierarchy dans inspect_element
+- Shadow DOM piercing dans batch extraction
+- Pseudo-elements (::before/::after) dans batch extraction
+- Accessibility data (role, aria-label, aria-hidden, tabindex)
 
 ## Vagues
 
@@ -47,29 +75,16 @@
 - [V5 — Features framework-specific](waves/v5-framework-specific.md)
 - [V6 — Responsive + modes spéciaux](waves/v6-responsive-modes.md)
 
-## 8 outils MCP actuels
-
-| Outil | Mode | Description |
-|-------|------|-------------|
-| `inspect_layout` | batch | Vue globale + tous les issues |
-| `find_issues` | batch | Issues filtrées par catégorie |
-| `get_scroll_tree` | batch | Arbre scroll containers + sticky |
-| `query_layout` | batch | Queries JS custom + responsive |
-| `capture_page` | batch | Screenshot annoté + responsive |
-| `inspect_element` | full | Zoom: CSS rules + event listeners |
-| `trace_property` | full | Cascade CSS d'une propriété |
-| `compare_elements` | full | Diff géométrique |
-
 ## Journal de bord
 
 | Date | Événement |
 |------|-----------|
 | 2026-08-20 | Projet initialisé. Repo GitHub créé (Jason59000/layout-lens). Setup TS + deps. Types définis. |
-| 2026-08-20 | V1 lancée — agent en worktree isolé pour connection.ts + extractor.ts |
-| 2026-08-20 | V1 TERMINÉE — mergée dans main (d04b483), pushée. 866 lignes ajoutées. |
-| 2026-08-20 | V2 lancée — 2 agents parallèles : détecteurs (10) + diagnostics (3) |
-| 2026-08-20 | V2 TERMINÉE — 10 détecteurs + 3 modules diagnostics mergés. 3,010 lignes ajoutées. |
-| 2026-08-20 | V3 TERMINÉE — formatter + 6 outils MCP + server mergés (e56e9a7), pushée. 1,284 lignes ajoutées. |
-| 2026-08-20 | V3.1 — batch extraction (1000x speedup), query_layout, sécurisation new Function→vm sandbox |
-| 2026-08-20 | V3.2 — capture_page (screenshot annoté), pseudo-éléments, a11y, responsive, event listeners |
-| 2026-08-20 | Discussion A/B test méthodologie, évaluation multi-profil (recruteur, VC, dev, CTO) |
+| 2026-08-20 | V1 TERMINÉE — connection.ts + extractor.ts. 866 lignes. |
+| 2026-08-20 | V2 TERMINÉE — 10 détecteurs + 3 diagnostics. 3,010 lignes. |
+| 2026-08-20 | V3 TERMINÉE — formatter + 6 outils MCP + server. 1,284 lignes. |
+| 2026-08-20 | V3.1 — batch extraction (1000x speedup), query_layout, vm sandbox |
+| 2026-08-20 | V3.2 — capture_page, pseudo-éléments, a11y, responsive, event listeners |
+| 2026-08-20 | V4 TERMINÉE — 5 monitoring tools (CLS, animations, hover/focus, DOM mutations, rendering) |
+| 2026-08-20 | V5 TERMINÉE — framework detection, React component mapping, Shadow DOM, Tailwind diagnostics |
+| 2026-08-20 | V6 TERMINÉE — test_responsive (6 viewports), compare_color_schemes (dark mode) |

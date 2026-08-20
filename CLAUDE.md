@@ -17,36 +17,51 @@ Geometric layout representation tool for LLM frontend debugging, exposed as an M
 src/
 ├── cdp/           # Chrome DevTools Protocol connection + extraction
 │   ├── connection.ts   # CDP connection lifecycle
-│   └── extractor.ts    # Batch (lightweight) + Full extraction modes
+│   └── extractor.ts    # Batch + Full extraction, framework detection, shadow DOM
 ├── detectors/     # 10 issue detectors (overflow, stacking, visibility, etc.)
-├── diagnostics/   # Cause chain, CSS rule tracing, impact analysis
-├── formatter/     # LLM-friendly text output
-├── tools/         # 8 MCP tool implementations
+├── diagnostics/   # Cause chain, CSS rule tracing, impact analysis, Tailwind
+├── formatter/     # LLM-friendly text output (framework header, Tailwind suggestions)
+├── tools/         # 15 MCP tool implementations
 ├── types.ts       # Shared types (LayoutNode, BoxModel, Issue, Detector)
 └── server.ts      # MCP server entry point
 ```
 
-## Two extraction modes
+## Three tool modes
 
-- **Batch (lightweight)**: single `Runtime.evaluate` call, ~150ms on large pages. Used by `inspect_layout`, `find_issues`, `get_scroll_tree`, `query_layout`, `capture_page`. No CSS rule sources.
-- **Full**: per-element CDP calls, includes CSS rule sources (file:line) and event listeners. Used by `inspect_element`, `trace_property`, `compare_elements`.
+- **Batch (lightweight)**: single `Runtime.evaluate` call, ~150ms. No CSS rule sources.
+- **Full**: per-element CDP calls, includes CSS rule sources (file:line), event listeners, React component mapping.
+- **Monitor**: time-based observation (DOM mutations, frame timing, multi-viewport).
 
-## 8 MCP Tools
+## 15 MCP Tools
 
 | Tool | Mode | Purpose |
 |------|------|---------|
-| `inspect_layout` | batch | Full page tree + all detected issues |
-| `find_issues` | batch | Issues filtered by category |
+| `inspect_layout` | batch | Full page tree + issues + framework detection |
+| `find_issues` | batch | Issues filtered by category + Tailwind suggestions |
 | `get_scroll_tree` | batch | Scroll containers + sticky elements |
-| `query_layout` | batch | Custom JS queries on layout data + responsive |
-| `capture_page` | batch | Annotated screenshot with overlay labels |
-| `inspect_element` | full | Deep inspection: CSS rules, event listeners |
+| `query_layout` | batch | Custom JS queries + responsive + colorScheme |
+| `capture_page` | batch | Annotated screenshot + responsive + colorScheme |
+| `inspect_element` | full | CSS rules, event listeners, React component |
 | `trace_property` | full | CSS cascade for a specific property |
 | `compare_elements` | full | Geometric diff between two elements |
+| `detect_layout_shifts` | snapshot | CLS score + shift source elements |
+| `check_animations` | snapshot | Stuck/hidden/running animation status |
+| `compare_color_schemes` | snapshot | Dark/light comparison + contrast check |
+| `check_interactive_states` | full | Hover/focus feedback + WCAG 2.4.7 |
+| `watch_dom_mutations` | monitor | DOM mutations over fixed duration |
+| `profile_rendering` | monitor | FPS + jank frames + frame distribution |
+| `test_responsive` | multi | 6 viewports + overflow/visibility/layout diff |
 
 ## Data extracted per element
 
-Geometry, 35+ computed styles, color/fontSize/lineHeight, textContent, pseudo-elements (::before/::after), accessibility (role, aria-label, aria-hidden, tabindex), stacking contexts, scroll state, natural image sizes.
+Geometry, 35+ computed styles, color/fontSize/lineHeight, textContent, pseudo-elements (::before/::after), accessibility (role, aria-label, aria-hidden, tabindex), stacking contexts, scroll state, natural image sizes, shadow DOM boundaries.
+
+## Enrichments
+
+- Framework auto-detection (React/Vue/Angular/Svelte/Next.js/Nuxt) in inspect_layout header
+- React component name + hierarchy in inspect_element via fiber tree walk
+- Tailwind CSS class suggestions in diagnostics when Tailwind is detected
+- Shadow DOM piercing in batch extraction
 
 ## Conventions
 
