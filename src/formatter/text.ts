@@ -20,6 +20,9 @@ import { detectTailwind, suggestTailwindFix } from "../diagnostics/tailwind.js";
  */
 function describeNode(node: LayoutNode): string {
   let label = formatSelector(node);
+  if (node.shadowRoot) {
+    label += " (shadow root)";
+  }
   const w = Math.round(node.boxModel.content.width);
   const h = Math.round(node.boxModel.content.height);
   if (w > 0 || h > 0) {
@@ -277,7 +280,8 @@ export function formatElement(
   const nodeIssues = issues.filter((i) => i.element.nodeId === node.nodeId);
 
   // Header
-  out.push(`ELEMENT: ${formatSelector(node)}`);
+  const shadowLabel = node.shadowRoot ? " (shadow root)" : "";
+  out.push(`ELEMENT: ${formatSelector(node)}${shadowLabel}`);
   out.push(`selector: ${path}`);
   out.push("");
 

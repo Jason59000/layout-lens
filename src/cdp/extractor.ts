@@ -52,6 +52,8 @@ interface BatchNode {
   a11y?: { role?: string; label?: string; hidden?: boolean; tabIndex?: number };
   // Pseudo-elements
   pseudos?: Array<{ type: string; content: string; display: string; position: string; width: string; height: string }>;
+  // Shadow DOM
+  shadowRoot?: boolean;
   // Children
   ch: BatchNode[];
 }
@@ -194,6 +196,13 @@ const BATCH_EXTRACT_JS = `(function() {
       pseudos.push({ type: "after", content: psAfter.content, display: psAfter.display, position: psAfter.position, width: psAfter.width, height: psAfter.height });
     }
     if (pseudos.length > 0) n.pseudos = pseudos;
+    if (el.shadowRoot) {
+      n.shadowRoot = true;
+      for (var s = 0; s < el.shadowRoot.children.length; s++) {
+        var sc2 = walk(el.shadowRoot.children[s], s + 1, el.shadowRoot.children.length);
+        if (sc2) ch.push(sc2);
+      }
+    }
     return n;
   }
   var root = walk(document.documentElement, 1, 1);
@@ -547,6 +556,10 @@ export class LayoutExtractor {
         width: p.width,
         height: p.height,
       }));
+    }
+
+    if (raw.shadowRoot) {
+      node.shadowRoot = true;
     }
 
     return node;
