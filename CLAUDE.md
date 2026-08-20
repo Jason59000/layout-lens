@@ -1,6 +1,6 @@
 # Layout Lens
 
-Geometric layout representation tool for LLM frontend debugging, exposed as an MCP server.
+Layout observability layer for AI agents — extracts computed layout data from Chrome via CDP, exposed as an MCP server. Provides facts for the agent+dev duo to reason about, not heuristic diagnoses.
 
 ## Stack
 
@@ -11,18 +11,17 @@ Geometric layout representation tool for LLM frontend debugging, exposed as an M
 
 ## Architecture
 
-4 layers: CDP extraction → Detection → Diagnostics → Formatting/MCP
+3 layers: CDP extraction → Diagnostics → Formatting/MCP
 
 ```
 src/
 ├── cdp/           # Chrome DevTools Protocol connection + extraction
 │   ├── connection.ts   # CDP connection lifecycle
 │   └── extractor.ts    # Batch + Full extraction, framework detection, shadow DOM
-├── detectors/     # 10 issue detectors (overflow, stacking, visibility, etc.)
-├── diagnostics/   # Cause chain, CSS rule tracing, impact analysis, Tailwind
-├── formatter/     # LLM-friendly text output (framework header, Tailwind suggestions)
-├── tools/         # 15 MCP tool implementations
-├── types.ts       # Shared types (LayoutNode, BoxModel, Issue, Detector)
+├── diagnostics/   # CSS rule tracing, Tailwind detection
+├── formatter/     # LLM-friendly text output (tree view, element detail, cascade)
+├── tools/         # 14 MCP tool implementations
+├── types.ts       # Shared types (LayoutNode, BoxModel) + tree utility functions
 └── server.ts      # MCP server entry point
 ```
 
@@ -32,12 +31,11 @@ src/
 - **Full**: per-element CDP calls, includes CSS rule sources (file:line), event listeners, React component mapping.
 - **Monitor**: time-based observation (DOM mutations, frame timing, multi-viewport).
 
-## 15 MCP Tools
+## 14 MCP Tools
 
 | Tool | Mode | Purpose |
 |------|------|---------|
-| `inspect_layout` | batch | Full page tree + issues + framework detection |
-| `find_issues` | batch | Issues filtered by category + Tailwind suggestions |
+| `inspect_layout` | batch | Full page tree + framework detection + Tailwind detection |
 | `get_scroll_tree` | batch | Scroll containers + sticky elements |
 | `query_layout` | batch | Custom JS queries + responsive + colorScheme |
 | `capture_page` | batch | Annotated screenshot + responsive + colorScheme |
@@ -60,15 +58,14 @@ Geometry, 35+ computed styles, color/fontSize/lineHeight, textContent, pseudo-el
 
 - Framework auto-detection (React/Vue/Angular/Svelte/Next.js/Nuxt) in inspect_layout header
 - React component name + hierarchy in inspect_element via fiber tree walk
-- Tailwind CSS class suggestions in diagnostics when Tailwind is detected
+- Tailwind CSS detection in inspect_layout header
 - Shadow DOM piercing in batch extraction
 
 ## Conventions
 
 - ESM imports with `.js` extensions (Node16 module resolution)
-- Each detector implements `Detector` interface from `types.ts`
 - Output format is code-like text (key=value, indentation), not JSON
-- Diagnostics include cause chains with CSS rule sources (file:line)
+- Tree utility functions (walkTree, flattenTree, etc.) live in `types.ts`
 - No comments unless the WHY is non-obvious
 - `query_layout` expressions run in `vm.runInNewContext` sandbox (not `new Function`)
 

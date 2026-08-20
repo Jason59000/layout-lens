@@ -5,7 +5,7 @@ import { LayoutExtractor } from "../cdp/extractor.js";
 import type { LayoutNode, LayoutTree } from "../types.js";
 import { RuleTracer } from "../diagnostics/rule-tracer.js";
 import { formatPropertyTrace } from "../formatter/text.js";
-import { walkTree } from "../detectors/types.js";
+import { walkTree } from "../types.js";
 
 /**
  * Find a node in the tree by matching its selector.

@@ -1,6 +1,5 @@
 import type {
   CSSRuleSource,
-  Issue,
   LayoutNode,
   LayoutTree,
 } from "../types.js";
@@ -10,14 +9,11 @@ import {
   flattenTree,
   findParent,
   getElementPath,
-} from "../detectors/types.js";
-import { detectTailwind, suggestTailwindFix } from "../diagnostics/tailwind.js";
+} from "../types.js";
+import { detectTailwind } from "../diagnostics/tailwind.js";
 
 // ─── Internal helpers ────────────────────────────────────────
 
-/**
- * Describe a node concisely: tag#id.class1.class2 (WxH)
- */
 function describeNode(node: LayoutNode): string {
   let label = formatSelector(node);
   if (node.shadowRoot) {
@@ -31,9 +27,6 @@ function describeNode(node: LayoutNode): string {
   return label;
 }
 
-/**
- * Describe a node with layout hints (display, position, flex/grid info).
- */
 function describeNodeWithHints(node: LayoutNode): string {
   let label = describeNode(node);
   const hints: string[] = [];
@@ -68,34 +61,6 @@ function describeNodeWithHints(node: LayoutNode): string {
   return label;
 }
 
-/**
- * Build a set of nodeIds that have issues, and map nodeId -> Issue[].
- */
-function buildIssueMap(issues: Issue[]): Map<number, Issue[]> {
-  const map = new Map<number, Issue[]>();
-  for (const issue of issues) {
-    const id = issue.element.nodeId;
-    const list = map.get(id) ?? [];
-    list.push(issue);
-    map.set(id, list);
-  }
-  return map;
-}
-
-/**
- * Count issues by category.
- */
-function countByCategory(issues: Issue[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const issue of issues) {
-    counts.set(issue.category, (counts.get(issue.category) ?? 0) + 1);
-  }
-  return counts;
-}
-
-/**
- * Format a source location for a CSS rule.
- */
 function fmtSource(rule: CSSRuleSource): string {
   if (!rule.sourceFile) return "";
   const filename = rule.sourceFile.split("/").pop() ?? rule.sourceFile;
@@ -103,22 +68,8 @@ function fmtSource(rule: CSSRuleSource): string {
   return filename;
 }
 
-/**
- * Format specificity as "a-b-c".
- */
 function fmtSpecificity(spec: [number, number, number]): string {
   return `${spec[0]}-${spec[1]}-${spec[2]}`;
-}
-
-/**
- * Severity icon.
- */
-function severityIcon(severity: string): string {
-  switch (severity) {
-    case "error": return "[ERROR]";
-    case "warning": return "[WARN]";
-    default: return "[INFO]";
-  }
 }
 
 // ─── Tree rendering ──────────────────────────────────────────
@@ -128,13 +79,8 @@ interface TreeLine {
   text: string;
 }
 
-/**
- * Render a layout tree as an indented tree with connectors.
- * Limits depth and collapses subtrees without issues for token efficiency.
- */
 function renderTree(
   node: LayoutNode,
-  issueMap: Map<number, Issue[]>,
   prefix: string,
   isLast: boolean,
   depth: number,
@@ -142,27 +88,7 @@ function renderTree(
   lines: TreeLine[],
 ): void {
   const connector = depth === 0 ? "" : isLast ? "└── " : "├── ";
-  const nodeIssues = issueMap.get(node.nodeId);
-  let label = describeNodeWithHints(node);
-
-  // Add issue flags
-  if (nodeIssues && nodeIssues.length > 0) {
-    for (const issue of nodeIssues) {
-      const tag = issue.category.toUpperCase().replace("-", "_");
-      if (issue.category === "overflow") {
-        const overflowPx = node.scroll.scrollWidth - node.scroll.clientWidth;
-        if (overflowPx > 0) {
-          label += ` ⚠ ${tag} +${Math.round(overflowPx)}px`;
-        } else {
-          label += ` ⚠ ${tag}`;
-        }
-      } else {
-        label += ` ⚠ ${tag}`;
-      }
-    }
-  } else if (node.children.length === 0) {
-    label += " ✓";
-  }
+  const label = describeNodeWithHints(node);
 
   lines.push({ prefix: prefix + connector, text: label });
 
@@ -176,22 +102,15 @@ function renderTree(
   for (let i = 0; i < node.children.length; i++) {
     const child = node.children[i];
     const childIsLast = i === node.children.length - 1;
-    renderTree(child, issueMap, childPrefix, childIsLast, depth + 1, maxDepth, lines);
+    renderTree(child, childPrefix, childIsLast, depth + 1, maxDepth, lines);
   }
 }
 
 // ─── Public API ──────────────────────────────────────────────
 
-/**
- * Format a LayoutTree overview with anomalies flagged.
- * Produces a compact tree view optimized for LLM consumption.
- */
-export function formatLayoutOverview(tree: LayoutTree, issues: Issue[]): string {
+export function formatLayoutOverview(tree: LayoutTree): string {
   const out: string[] = [];
-  const issueMap = buildIssueMap(issues);
-  const categoryCounts = countByCategory(issues);
 
-  // Header
   out.push("PAGE LAYOUT OVERVIEW");
   out.push(`viewport: ${tree.viewport.width}x${tree.viewport.height}`);
   if (tree.framework) {
@@ -200,92 +119,36 @@ export function formatLayoutOverview(tree: LayoutTree, issues: Issue[]): string 
     if (tree.framework.meta) fwLine += ` (${tree.framework.meta})`;
     out.push(fwLine);
   }
+
+  const isTailwind = detectTailwind(flattenTree(tree));
+  if (isTailwind) {
+    out.push("css: Tailwind CSS detected");
+  }
+
   out.push("");
 
-  // Anomaly summary
-  if (issues.length > 0) {
-    const parts: string[] = [];
-    for (const [cat, count] of categoryCounts) {
-      parts.push(`${count} ${cat}`);
-    }
-    out.push(`ANOMALIES DETECTED: ${parts.join(", ")}`);
-    out.push("");
-  } else {
-    out.push("NO ANOMALIES DETECTED");
-    out.push("");
-  }
-
-  // Tree
   const lines: TreeLine[] = [];
-  renderTree(tree.root, issueMap, "", true, 0, 6, lines);
+  renderTree(tree.root, "", true, 0, 6, lines);
   for (const line of lines) {
     out.push(line.prefix + line.text);
-  }
-
-  // Tailwind detection for enriched diagnostics
-  const isTailwind = detectTailwind(flattenTree(tree));
-
-  // Overflow details section
-  const overflowIssues = issues.filter((i) => i.category === "overflow");
-  if (overflowIssues.length > 0) {
-    out.push("");
-    out.push("⚠ OVERFLOW DETAILS:");
-    for (const issue of overflowIssues) {
-      const el = formatSelector(issue.element);
-      out.push(`  ${el}: ${issue.summary}`);
-      if (issue.rootCause) {
-        out.push(`  → root cause: ${issue.rootCause.description}`);
-        if (issue.rootCause.source) {
-          const src = fmtSource(issue.rootCause.source);
-          if (src) out.push(`  → source: ${issue.rootCause.source.selector} (${src})`);
-        }
-        if (isTailwind && issue.rootCause.source) {
-          const tw = suggestTailwindFix(
-            issue.rootCause.source.property,
-            issue.rootCause.source.value,
-            inferSuggestedValue(issue),
-          );
-          if (tw) out.push(`  → tailwind: ${tw}`);
-        }
-      }
-    }
-  }
-
-  // Other issue details
-  const otherIssues = issues.filter((i) => i.category !== "overflow");
-  if (otherIssues.length > 0) {
-    out.push("");
-    out.push("⚠ OTHER ISSUES:");
-    for (const issue of otherIssues) {
-      const el = formatSelector(issue.element);
-      out.push(`  ${severityIcon(issue.severity)} ${el}: ${issue.summary}`);
-    }
   }
 
   return out.join("\n");
 }
 
-/**
- * Format a single element in detail: box model, computed styles,
- * parent relationship, stacking info.
- */
 export function formatElement(
   node: LayoutNode,
   tree: LayoutTree,
-  issues: Issue[],
 ): string {
   const out: string[] = [];
   const parent = findParent(node, tree);
   const path = getElementPath(node, tree);
-  const nodeIssues = issues.filter((i) => i.element.nodeId === node.nodeId);
 
-  // Header
   const shadowLabel = node.shadowRoot ? " (shadow root)" : "";
   out.push(`ELEMENT: ${formatSelector(node)}${shadowLabel}`);
   out.push(`selector: ${path}`);
   out.push("");
 
-  // Box model
   const bm = node.boxModel;
   out.push("BOX MODEL:");
   out.push(`  content:  ${Math.round(bm.content.width)} x ${Math.round(bm.content.height)}`);
@@ -295,14 +158,12 @@ export function formatElement(
   out.push(`  total:    ${Math.round(bm.total.width)} x ${Math.round(bm.total.height)}`);
   out.push("");
 
-  // Position
   out.push("POSITION:");
   out.push(`  display: ${node.computed.display}`);
   out.push(`  position: ${node.computed.position}`);
   out.push(`  top: ${Math.round(bm.total.y)}  left: ${Math.round(bm.total.x)}`);
   out.push("");
 
-  // Parent relationship
   if (parent) {
     out.push("PARENT RELATIONSHIP:");
     out.push(`  parent: ${formatSelector(parent)} (${Math.round(parent.boxModel.content.width)} x ${Math.round(parent.boxModel.content.height)})`);
@@ -311,29 +172,28 @@ export function formatElement(
     const heightDiff = Math.round(bm.total.height - parent.boxModel.content.height);
 
     if (widthDiff > 0) {
-      out.push(`  ⚠ element exceeds parent width by ${widthDiff}px`);
+      out.push(`  element exceeds parent width by ${widthDiff}px`);
       if (parent.computed.overflowX === "hidden") {
-        out.push("  parent overflow-x: hidden → content CLIPPED");
+        out.push("  parent overflow-x: hidden -> content CLIPPED");
       } else if (parent.computed.overflowX === "auto" || parent.computed.overflowX === "scroll") {
-        out.push(`  parent overflow-x: ${parent.computed.overflowX} → content SCROLLABLE`);
+        out.push(`  parent overflow-x: ${parent.computed.overflowX} -> content SCROLLABLE`);
       } else {
-        out.push("  parent overflow-x: visible → content BLEEDS");
+        out.push("  parent overflow-x: visible -> content BLEEDS");
       }
     }
 
     if (heightDiff > 0) {
-      out.push(`  ⚠ element exceeds parent height by ${heightDiff}px`);
+      out.push(`  element exceeds parent height by ${heightDiff}px`);
       if (parent.computed.overflowY === "hidden") {
-        out.push("  parent overflow-y: hidden → content CLIPPED");
+        out.push("  parent overflow-y: hidden -> content CLIPPED");
       } else if (parent.computed.overflowY === "auto" || parent.computed.overflowY === "scroll") {
-        out.push(`  parent overflow-y: ${parent.computed.overflowY} → content SCROLLABLE`);
+        out.push(`  parent overflow-y: ${parent.computed.overflowY} -> content SCROLLABLE`);
       }
     }
 
     out.push("");
   }
 
-  // Stacking
   out.push("STACKING:");
   const zDisplay = node.stacking.zIndex === "auto" ? "auto" : String(node.stacking.zIndex);
   const contextNote = node.stacking.createsContext
@@ -342,7 +202,6 @@ export function formatElement(
   out.push(`  z-index: ${zDisplay} (${contextNote})`);
   out.push("");
 
-  // Computed styles (relevant ones only)
   out.push("COMPUTED (relevant):");
   out.push(`  box-sizing: ${node.computed.boxSizing}`);
 
@@ -357,7 +216,6 @@ export function formatElement(
     ["text-overflow", node.computed.textOverflow],
   ];
 
-  // Flex properties
   if (node.computed.display === "flex" || node.computed.display === "inline-flex") {
     relevantProps.push(
       ["flex-direction", node.computed.flexDirection],
@@ -368,7 +226,6 @@ export function formatElement(
     );
   }
 
-  // Grid properties
   if (node.computed.display === "grid" || node.computed.display === "inline-grid") {
     relevantProps.push(
       ["grid-template-columns", node.computed.gridTemplateColumns],
@@ -377,7 +234,6 @@ export function formatElement(
     );
   }
 
-  // Additional
   if (node.computed.transform && node.computed.transform !== "none") {
     relevantProps.push(["transform", node.computed.transform]);
   }
@@ -387,6 +243,27 @@ export function formatElement(
   if (node.computed.objectFit) {
     relevantProps.push(["object-fit", node.computed.objectFit]);
   }
+  if (node.computed.pointerEvents && node.computed.pointerEvents !== "auto") {
+    relevantProps.push(["pointer-events", node.computed.pointerEvents]);
+  }
+  if (node.computed.cursor) {
+    relevantProps.push(["cursor", node.computed.cursor]);
+  }
+  if (node.computed.touchAction && node.computed.touchAction !== "auto") {
+    relevantProps.push(["touch-action", node.computed.touchAction]);
+  }
+  if (node.computed.contain && node.computed.contain !== "none") {
+    relevantProps.push(["contain", node.computed.contain]);
+  }
+  if (node.computed.contentVisibility && node.computed.contentVisibility !== "visible") {
+    relevantProps.push(["content-visibility", node.computed.contentVisibility]);
+  }
+  if (node.computed.containerType && node.computed.containerType !== "normal") {
+    relevantProps.push(["container-type", node.computed.containerType]);
+  }
+  if (node.computed.aspectRatio && node.computed.aspectRatio !== "auto") {
+    relevantProps.push(["aspect-ratio", node.computed.aspectRatio]);
+  }
 
   for (const [prop, val] of relevantProps) {
     if (val && val !== "visible" && val !== "auto" && val !== "none" && val !== "normal" && val !== "0px") {
@@ -394,7 +271,6 @@ export function formatElement(
     }
   }
 
-  // Natural size (for images)
   if (node.naturalSize) {
     out.push("");
     out.push("NATURAL SIZE (image):");
@@ -403,129 +279,13 @@ export function formatElement(
     const ratioNatural = node.naturalSize.width / node.naturalSize.height;
     const ratioRendered = bm.content.width / bm.content.height;
     if (Math.abs(ratioNatural - ratioRendered) > 0.05) {
-      out.push(`  ⚠ aspect ratio distorted: natural=${ratioNatural.toFixed(2)}, rendered=${ratioRendered.toFixed(2)}`);
-    }
-  }
-
-  // Issues on this element
-  if (nodeIssues.length > 0) {
-    out.push("");
-    out.push("ISSUES ON THIS ELEMENT:");
-    for (const issue of nodeIssues) {
-      out.push(`  ${severityIcon(issue.severity)} ${issue.summary}`);
-      if (issue.rootCause) {
-        out.push(`    root cause: ${issue.rootCause.description}`);
-      }
+      out.push(`  aspect ratio distorted: natural=${ratioNatural.toFixed(2)}, rendered=${ratioRendered.toFixed(2)}`);
     }
   }
 
   return out.join("\n");
 }
 
-/**
- * Format a list of issues with full diagnostics.
- */
-export function formatIssues(issues: Issue[], tree?: LayoutTree): string {
-  if (issues.length === 0) {
-    return "NO ISSUES DETECTED";
-  }
-
-  const out: string[] = [];
-  const categoryCounts = countByCategory(issues);
-
-  const isTailwind = tree ? detectTailwind(flattenTree(tree)) : false;
-
-  // Summary header
-  out.push(`ISSUES FOUND: ${issues.length} total`);
-  const parts: string[] = [];
-  for (const [cat, count] of categoryCounts) {
-    parts.push(`${count} ${cat}`);
-  }
-  out.push(`Categories: ${parts.join(", ")}`);
-
-  // Sort: errors first, then warnings, then info
-  const severityOrder: Record<string, number> = { error: 0, warning: 1, info: 2 };
-  const sorted = [...issues].sort(
-    (a, b) => (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9),
-  );
-
-  for (let i = 0; i < sorted.length; i++) {
-    out.push("");
-    out.push(`--- Issue ${i + 1}/${sorted.length} ---`);
-    out.push(formatIssue(sorted[i], isTailwind));
-  }
-
-  return out.join("\n");
-}
-
-/**
- * Format a single issue: WHAT, WHERE, WHY (cause chain), IMPACT.
- */
-export function formatIssue(issue: Issue, isTailwind = false): string {
-  const out: string[] = [];
-
-  // WHAT
-  out.push(`ISSUE: ${issue.summary}`);
-  out.push(`SEVERITY: ${issue.severity.toUpperCase()}`);
-  out.push(`CATEGORY: ${issue.category}`);
-
-  // WHERE
-  out.push(`ELEMENT: ${formatSelector(issue.element)}`);
-  out.push(`  in: ${issue.elementPath}`);
-
-  // WHY
-  if (issue.causeChain.length > 0) {
-    out.push("CAUSE CHAIN:");
-    for (let i = 0; i < issue.causeChain.length; i++) {
-      const step = issue.causeChain[i];
-      out.push(`  ${i + 1}. ${step.element} has ${step.property}: ${step.value}`);
-      if (step.ruleSource) {
-        const src = fmtSource(step.ruleSource);
-        const selector = step.ruleSource.selector;
-        const prop = step.ruleSource.property;
-        const val = step.ruleSource.value;
-        let ruleLine = `     → from: ${selector} { ${prop}: ${val} }`;
-        if (src) ruleLine += `  (${src})`;
-        out.push(ruleLine);
-      }
-      out.push(`     → ${step.explanation}`);
-    }
-  }
-
-  // ROOT CAUSE
-  if (issue.rootCause) {
-    out.push(`ROOT CAUSE: ${issue.rootCause.description}`);
-    if (issue.rootCause.source) {
-      const src = fmtSource(issue.rootCause.source);
-      const spec = fmtSpecificity(issue.rootCause.source.specificity);
-      let srcLine = `  source: ${issue.rootCause.source.selector}`;
-      if (src) srcLine += ` (${src})`;
-      srcLine += `, specificity: ${spec}`;
-      out.push(srcLine);
-    }
-    if (isTailwind && issue.rootCause.source) {
-      const tw = suggestTailwindFix(
-        issue.rootCause.source.property,
-        issue.rootCause.source.value,
-        inferSuggestedValue(issue),
-      );
-      if (tw) {
-        out.push(`  tailwind: ${tw}`);
-      }
-    }
-  }
-
-  // IMPACT
-  if (issue.impact) {
-    out.push(`IMPACT: ${issue.impact}`);
-  }
-
-  return out.join("\n");
-}
-
-/**
- * Format the CSS cascade for a specific property on a node.
- */
 export function formatPropertyTrace(
   node: LayoutNode,
   property: string,
@@ -569,9 +329,6 @@ export function formatPropertyTrace(
   return out.join("\n");
 }
 
-/**
- * Format a comparison (diff) between two layout nodes.
- */
 export function formatComparison(a: LayoutNode, b: LayoutNode): string {
   const out: string[] = [];
 
@@ -580,7 +337,6 @@ export function formatComparison(a: LayoutNode, b: LayoutNode): string {
   out.push(`  B: ${formatSelector(b)}`);
   out.push("");
 
-  // Geometry diff
   out.push("GEOMETRY:");
   diffLine(out, "content width", Math.round(a.boxModel.content.width), Math.round(b.boxModel.content.width));
   diffLine(out, "content height", Math.round(a.boxModel.content.height), Math.round(b.boxModel.content.height));
@@ -590,7 +346,6 @@ export function formatComparison(a: LayoutNode, b: LayoutNode): string {
   diffLine(out, "y", Math.round(a.boxModel.total.y), Math.round(b.boxModel.total.y));
   out.push("");
 
-  // Padding diff
   out.push("PADDING:");
   diffLine(out, "top", a.boxModel.padding.top, b.boxModel.padding.top);
   diffLine(out, "right", a.boxModel.padding.right, b.boxModel.padding.right);
@@ -598,7 +353,6 @@ export function formatComparison(a: LayoutNode, b: LayoutNode): string {
   diffLine(out, "left", a.boxModel.padding.left, b.boxModel.padding.left);
   out.push("");
 
-  // Margin diff
   out.push("MARGIN:");
   diffLine(out, "top", a.boxModel.margin.top, b.boxModel.margin.top);
   diffLine(out, "right", a.boxModel.margin.right, b.boxModel.margin.right);
@@ -606,7 +360,6 @@ export function formatComparison(a: LayoutNode, b: LayoutNode): string {
   diffLine(out, "left", a.boxModel.margin.left, b.boxModel.margin.left);
   out.push("");
 
-  // Computed style diff
   out.push("COMPUTED STYLES:");
   const propsToCompare: Array<[string, string, string]> = [
     ["display", a.computed.display, b.computed.display],
@@ -627,7 +380,7 @@ export function formatComparison(a: LayoutNode, b: LayoutNode): string {
   let hasDiff = false;
   for (const [prop, valA, valB] of propsToCompare) {
     if (valA !== valB) {
-      out.push(`  ${prop}: A=${valA}  B=${valB}  ← DIFFERENT`);
+      out.push(`  ${prop}: A=${valA}  B=${valB}  <- DIFFERENT`);
       hasDiff = true;
     }
   }
@@ -635,13 +388,12 @@ export function formatComparison(a: LayoutNode, b: LayoutNode): string {
     out.push("  (all compared properties are identical)");
   }
 
-  // Stacking diff
   out.push("");
   out.push("STACKING:");
   const zA = a.stacking.zIndex === "auto" ? "auto" : String(a.stacking.zIndex);
   const zB = b.stacking.zIndex === "auto" ? "auto" : String(b.stacking.zIndex);
   if (zA !== zB) {
-    out.push(`  z-index: A=${zA}  B=${zB}  ← DIFFERENT`);
+    out.push(`  z-index: A=${zA}  B=${zB}  <- DIFFERENT`);
   } else {
     out.push(`  z-index: ${zA} (same)`);
   }
@@ -651,9 +403,6 @@ export function formatComparison(a: LayoutNode, b: LayoutNode): string {
   return out.join("\n");
 }
 
-/**
- * Format the scroll container tree.
- */
 export function formatScrollTree(tree: LayoutTree): string {
   const out: string[] = [];
 
@@ -661,7 +410,6 @@ export function formatScrollTree(tree: LayoutTree): string {
   out.push(`viewport: ${tree.viewport.width}x${tree.viewport.height}`);
   out.push("");
 
-  // Collect scroll containers and sticky elements
   const scrollContainers: LayoutNode[] = [];
   const stickyElements: LayoutNode[] = [];
 
@@ -725,35 +473,6 @@ export function formatScrollTree(tree: LayoutTree): string {
 
 // ─── Private helpers ─────────────────────────────────────────
 
-/**
- * Infer a suggested CSS value from an issue's context.
- * Used to generate Tailwind fix suggestions.
- */
-function inferSuggestedValue(issue: Issue): string {
-  const prop = issue.rootCause?.source?.property ?? "";
-  const val = issue.rootCause?.source?.value ?? "";
-
-  // Overflow issues: suggest auto or scroll instead of hidden/visible
-  if (prop === "overflow" || prop === "overflow-x" || prop === "overflow-y") {
-    if (val === "hidden") return "auto";
-    if (val === "visible") return "auto";
-  }
-
-  // Flex shrink 0 causing overflow: suggest 1
-  if (prop === "flex-shrink" && val === "0") return "1";
-
-  // White-space nowrap causing overflow: suggest normal
-  if (prop === "white-space" && (val === "nowrap" || val === "pre")) return "normal";
-
-  // Display none: suggest block
-  if (prop === "display" && val === "none") return "block";
-
-  // Visibility hidden: suggest visible
-  if (prop === "visibility" && val === "hidden") return "visible";
-
-  return "";
-}
-
 function diffLine(out: string[], label: string, a: number, b: number): void {
   if (a === b) {
     out.push(`  ${label}: ${a} (same)`);
@@ -764,9 +483,6 @@ function diffLine(out: string[], label: string, a: number, b: number): void {
   }
 }
 
-/**
- * Get a computed style property value by CSS property name.
- */
 function getComputedProp(node: LayoutNode, cssProp: string): string {
   const camelCase = cssProp.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
   const computed = node.computed as unknown as Record<string, string | undefined>;

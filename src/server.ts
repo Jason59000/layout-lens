@@ -3,7 +3,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerInspectLayout } from "./tools/inspect-layout.js";
 import { registerInspectElement } from "./tools/inspect-element.js";
-import { registerFindIssues } from "./tools/find-issues.js";
 import { registerTraceProperty } from "./tools/trace-property.js";
 import { registerCompareElements } from "./tools/compare-elements.js";
 import { registerGetScrollTree } from "./tools/get-scroll-tree.js";
@@ -24,7 +23,6 @@ const server = new McpServer({
 
 registerInspectLayout(server);
 registerInspectElement(server);
-registerFindIssues(server);
 registerTraceProperty(server);
 registerCompareElements(server);
 registerGetScrollTree(server);

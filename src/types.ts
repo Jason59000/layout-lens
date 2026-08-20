@@ -86,6 +86,13 @@ export interface ComputedStyles {
   backgroundColor?: string;
   fontSize?: string;
   lineHeight?: string;
+  pointerEvents?: string;
+  cursor?: string;
+  touchAction?: string;
+  contain?: string;
+  contentVisibility?: string;
+  containerType?: string;
+  aspectRatio?: string;
   positionSticky?: {
     top?: string;
     bottom?: string;
@@ -134,114 +141,101 @@ export interface LayoutTree {
   framework?: { name: string; version?: string; meta?: string };
 }
 
-export type IssueCategory =
-  | "overflow"
-  | "stacking"
-  | "visibility"
-  | "flex-grid"
-  | "scroll"
-  | "margin-collapse"
-  | "text-truncation"
-  | "image-distortion"
-  | "whitespace"
-  | "fixed-collision";
 
-export type IssueSeverity = "error" | "warning" | "info";
+// --- Tree utility functions ---
 
-export interface CauseStep {
-  element: string;
-  property: string;
-  value: string;
-  ruleSource?: CSSRuleSource;
-  explanation: string;
+export function getElementPath(node: LayoutNode, tree: LayoutTree): string {
+  const segments: string[] = [];
+  const nodeMap = buildNodeMap(tree);
+  let current: LayoutNode | undefined = node;
+  while (current) {
+    segments.unshift(formatSelector(current));
+    if (current.parentId !== undefined) {
+      current = nodeMap.get(current.parentId);
+    } else {
+      break;
+    }
+  }
+  return segments.join(" > ");
 }
 
-export interface Issue {
-  category: IssueCategory;
-  severity: IssueSeverity;
-  summary: string;
-  element: LayoutNode;
-  elementPath: string;
-  causeChain: CauseStep[];
-  rootCause: {
-    description: string;
-    source?: CSSRuleSource;
-  };
-  impact?: string;
-  relatedNodes?: LayoutNode[];
+export function findParent(
+  node: LayoutNode,
+  tree: LayoutTree,
+): LayoutNode | null {
+  if (node.parentId === undefined) return null;
+  const nodeMap = buildNodeMap(tree);
+  return nodeMap.get(node.parentId) ?? null;
 }
 
-export interface Detector {
-  category: IssueCategory;
-  detect(tree: LayoutTree): Issue[];
+export function walkTree(
+  tree: LayoutTree,
+  callback: (node: LayoutNode, parent?: LayoutNode) => void,
+): void {
+  function visit(node: LayoutNode, parent?: LayoutNode): void {
+    callback(node, parent);
+    for (const child of node.children) {
+      visit(child, node);
+    }
+  }
+  visit(tree.root);
 }
 
-// --- Monitoring types (V4) ---
-
-// Mode 1: post-load analysis (automatic, no user intervention)
-export interface PostLoadReport {
-  layoutShifts: LayoutShiftEntry[];
-  clsScore: number;
-  animations: AnimationState[];
-  imagesWithoutDimensions: Array<{ selector: string; naturalSize: { width: number; height: number } }>;
+export function flattenTree(tree: LayoutTree): LayoutNode[] {
+  const nodes: LayoutNode[] = [];
+  walkTree(tree, (node) => nodes.push(node));
+  return nodes;
 }
 
-export interface LayoutShiftEntry {
-  score: number;
-  timestamp: number;
-  sources: Array<{
-    selector: string;
-    previousRect: Rect;
-    currentRect: Rect;
-    delta: { x: number; y: number };
-  }>;
+export function findRuleForProperty(
+  node: LayoutNode,
+  property: string,
+): CSSRuleSource | undefined {
+  const matching = node.rules.filter(
+    (r) => r.property === property && !r.isUserAgent,
+  );
+  if (matching.length === 0) {
+    return node.rules.find((r) => r.property === property);
+  }
+  matching.sort((a, b) => compareSpecificity(b.specificity, a.specificity));
+  return matching[0];
 }
 
-export interface AnimationState {
-  selector: string;
-  name: string;
-  state: "running" | "paused" | "finished" | "idle";
-  currentTime: number;
-  duration: number;
-  stuckSince?: number;
+export function formatSelector(node: LayoutNode): string {
+  let sel = node.tag;
+  if (node.id) sel += `#${node.id}`;
+  if (node.classes.length > 0) sel += node.classes.map((c) => `.${c}`).join("");
+  return sel;
 }
 
-// Mode 2: fixed-duration monitoring (LLM calls monitor(duration_ms))
-export interface MonitoringResult {
-  duration: number;
-  snapshotBefore: LayoutTree;
-  snapshotAfter: LayoutTree;
-  mutationSummary: MutationSummary;
-  diff: LayoutDiff;
+export function parsePx(value: string): number {
+  if (!value) return 0;
+  const num = parseFloat(value);
+  return isNaN(num) ? 0 : num;
 }
 
-export interface MutationSummary {
-  totalMutations: number;
-  mutationsPerSecond: number;
-  hotElements: Array<{
-    selector: string;
-    mutationCount: number;
-    mutationsPerSecond: number;
-    mutationType: "attribute" | "childList" | "mixed";
-    pattern?: string;
-  }>;
+export function isFlexContainer(node: LayoutNode): boolean {
+  const d = node.computed.display;
+  return d === "flex" || d === "inline-flex";
 }
 
-export interface LayoutDiff {
-  added: string[];
-  removed: string[];
-  changed: Array<{
-    selector: string;
-    property: string;
-    before: string;
-    after: string;
-  }>;
-  unchangedCount: number;
-  changedCount: number;
+export function isGridContainer(node: LayoutNode): boolean {
+  const d = node.computed.display;
+  return d === "grid" || d === "inline-grid";
 }
 
-export interface MonitorDetector {
-  category: IssueCategory;
-  detectPostLoad(report: PostLoadReport): Issue[];
-  detectMonitoring(result: MonitoringResult): Issue[];
+function buildNodeMap(tree: LayoutTree): Map<number, LayoutNode> {
+  const map = new Map<number, LayoutNode>();
+  walkTree(tree, (node) => map.set(node.nodeId, node));
+  return map;
+}
+
+function compareSpecificity(
+  a: [number, number, number],
+  b: [number, number, number],
+): number {
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
 }

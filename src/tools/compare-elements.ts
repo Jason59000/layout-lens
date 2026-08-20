@@ -4,7 +4,7 @@ import { CDPConnection } from "../cdp/connection.js";
 import { LayoutExtractor } from "../cdp/extractor.js";
 import type { LayoutNode, LayoutTree } from "../types.js";
 import { formatComparison } from "../formatter/text.js";
-import { walkTree } from "../detectors/types.js";
+import { walkTree } from "../types.js";
 
 /**
  * Find a node in the tree by matching its selector.

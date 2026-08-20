@@ -1,108 +1,114 @@
 # Layout Lens
 
-Geometric layout representation for LLM frontend debugging, exposed as an MCP server.
+Gives AI agents eyes on the rendered page.
 
-> AI agents can read your CSS. They can't see what it renders. Layout Lens gives them the computed styles, box models, and diagnostic cause chains that Chrome DevTools MCP doesn't expose ([issue #86](https://github.com/anthropics/model-context-protocol/issues/86)).
+> Your agent can read CSS. It can't see what it renders. Layout Lens connects it to Chrome and gives it the computed layout data — box models, cascades, scroll state, geometry — so together you can debug what source code alone can't explain.
 
-## The Problem
+## Why
 
-Ask an AI agent to fix a layout bug today, and it reads your source code and guesses. It can't see that a table overflows its container, that a sticky header is broken by a parent's `overflow: auto`, or that an animation is stuck because the element is `display: none`.
+When you ask an agent to fix a layout bug, it reads your code and guesses. It doesn't know that the table is actually 1904px wide inside a 1280px container. It can't see that `position: sticky` is silently captured by an ancestor's `overflow: auto`. It has no way to tell that an animation is frozen because the element is `display: none`.
 
-Layout Lens gives the agent the same data you get from F12 -- but structured for reasoning, not for human eyes.
+These aren't hard bugs — they're invisible bugs. Invisible because the agent only sees source, not output.
 
-## Real-World Examples
+Layout Lens gives it the output.
 
-### "Why is this table cut off?"
+## How it works
 
-The agent reads the code: `width: 100%`. Looks fine. But the rendered table is 1904px inside a 1280px container with `overflow: hidden`. The agent can't know this without computed layout data.
+Layout Lens is an MCP server. It connects to Chrome via CDP, extracts the computed layout, and hands it to the agent as structured data. The agent reasons about it. You decide what to fix.
 
-**With Layout Lens** (`find_issues`):
 ```
-ISSUE: horizontal overflow (content clipped)
+Your agent ←→ Layout Lens (MCP) ←→ Chrome (CDP:9222) ←→ Your page
+```
+
+## What the agent gets
+
+### The page structure — with real dimensions
+
+```
+inspect_layout
+
+PAGE LAYOUT OVERVIEW
+viewport: 1280x720
+framework: React 18.2.0
+css: Tailwind CSS detected
+
+html (1280x720)
+├── body (1280x4200)
+│   ├── header.navbar (1280x64), sticky
+│   ├── main.content (1280x4000), flex-column
+│   │   ├── section.hero (1280x400)
+│   │   ├── div.grid-container (1280x2400), grid 3-col
+│   │   │   ├── div.card (400x300)
+│   │   │   ├── div.card (400x300)
+│   │   │   └── ... (12 children)
+│   │   └── section.footer (1280x200)
+```
+
+Not the DOM. The rendered layout with computed sizes, display modes, and positioning.
+
+### Any element in detail — box model, parent, CSS rules
+
+```
+inspect_element "#data-table"
+
 ELEMENT: table.data-table
-  in: body > main > section.table-wrapper > table.data-table
-CAUSE CHAIN:
-  1. table.data-table has min-width: 1904px
-     -> from: .data-table { min-width: 1904px }  (styles.css:45)
-  2. parent section.table-wrapper has width: 1280px
-     -> from: .table-wrapper { max-width: 100% }  (styles.css:23)
-  3. parent has overflow-x: hidden -> content CLIPPED
-ROOT CAUSE: min-width: 1904px forces table wider than container
+selector: html > body > main > section.table-wrapper > table.data-table
+
+BOX MODEL:
+  content:  1904 x 600
+  padding:  0 16 0 16
+  total:    1936 x 600
+
+PARENT RELATIONSHIP:
+  parent: section.table-wrapper (1280 x 620)
+  element exceeds parent width by 656px
+  parent overflow-x: hidden -> content CLIPPED
 ```
 
-The agent now knows exactly which rule to change and where.
+The agent now sees the overflow. It knows the parent is 1280px, the table is 1904px, and the content is clipped. It can trace why and suggest a fix.
 
-### "The sticky header doesn't stick"
+### The CSS cascade — which rule wins and why
 
-Classic cascade bug. `position: sticky` is set, but a grandparent has `overflow-y: auto` -- which silently captures the sticky behavior. The agent would need to walk up every ancestor checking overflow. Manually, that's 10+ minutes of DevTools clicking.
-
-**With Layout Lens** (`trace_property`):
 ```
-ISSUE: position:sticky has no effect
-ELEMENT: header.sticky-nav
-  position: sticky, top: 0 -- NOT STICKING
-CAUSE CHAIN:
-  1. header has position: sticky, top: 0
-     -> from: .sticky-nav { position: sticky; top: 0 }  (header.css:8)
-  2. grandparent main.content has overflow-y: auto
-     -> from: .content { overflow-y: auto }  (layout.css:34)
-     -> creates scroll container that captures sticky
-ROOT CAUSE: ancestor overflow-y:auto captures sticky behavior
+trace_property "#data-table" "min-width"
+
+CSS CASCADE: min-width
+element: table.data-table
+
+  WINNING: .data-table { min-width: 1904px }  (styles.css:45, specificity: 0-1-0)
+  OVERRIDDEN: table { min-width: 100% }  (reset.css:12, specificity: 0-0-1)
+
+Computed value: 1904px
 ```
 
-### "The page breaks on mobile but I don't know where"
+### Every viewport at once
 
-The agent can't resize the browser. With Layout Lens, one call tests 6 viewports and diffs the results.
-
-**With Layout Lens** (`test_responsive`):
 ```
+test_responsive
+
 RESPONSIVE ANALYSIS: 6 viewports tested
 
-BREAKAGE AT 320px (mobile S):
-  1. div.code-block overflows viewport by 20px
-     scroll content: 340px, container: 320px
-  2. div.related-card causes horizontal scroll
-     scroll content: 128px, container: 320px
+320px (mobile S):
+  div.code-block overflows viewport by 20px
+  div.related-card causes horizontal scroll
 
-ALL CLEAR: 768px, 1024px, 1280px, 1920px
-
-SUMMARY: 2 breakpoints with overflow issues, 4 clean
+768px, 1024px, 1280px, 1920px: clean
 ```
 
-### "Does this page have dark mode issues?"
+### DOM activity in real time
 
-The agent can't toggle `prefers-color-scheme`. Layout Lens switches modes, screenshots both, and compares every element's colors.
-
-**With Layout Lens** (`compare_color_schemes`):
 ```
-COLOR SCHEME COMPARISON
+watch_dom_mutations 5000
 
-1. UNCHANGED COLORS (hardcoded?)
-   element: div.card
-   light: bg=#ffffff, text=#000000
-   dark: bg=#ffffff, text=#000000  <- not responding to color scheme
-
-2. LOW CONTRAST (dark mode)
-   element: p.subtitle
-   color: #333333 on background: #1a1a1a
-   contrast ratio: ~1.5:1 (minimum: 4.5:1)
-
-SUMMARY: 45 elements compared, 42 respond to color scheme, 3 issues
-```
-
-### "Is there a re-render loop?"
-
-The agent can't see the DOM churning. Layout Lens watches mutations in real time while you interact with the page.
-
-**With Layout Lens** (`watch_dom_mutations`, 5s capture):
-```
 HOT ELEMENTS (>10 mutations):
 1. div.price-display -- 186 mutations (62/sec)
    types: 180 attribute, 6 childNode
-   pattern: continuous attribute updates (likely re-render loop)
+   pattern: continuous attribute updates
 
 TOTAL: 240 DOM mutations in 5.0s (48/sec average)
 ```
+
+You interact with the page. Layout Lens records what moves. The agent reads it.
 
 ## Quick Start
 
@@ -125,71 +131,54 @@ Start Chrome with remote debugging:
 chrome --remote-debugging-port=9222
 ```
 
-## 15 Tools
+That's it. Your agent now has 14 tools to look at the rendered page.
 
-### Batch (snapshot, ~150ms)
+## 14 Tools
 
-| Tool | What it answers |
-|------|----------------|
-| `inspect_layout` | "What's on this page? Any layout issues?" |
-| `find_issues` | "Show me all the overflow / stacking / visibility bugs" |
-| `get_scroll_tree` | "Why is there a double scrollbar?" |
-| `query_layout` | "Which elements are wider than 500px?" |
-| `capture_page` | "Screenshot with annotations on these selectors" |
+### Page snapshot (~150ms)
 
-### Full (per-element, deep)
+| Tool | Data |
+|------|------|
+| `inspect_layout` | Full layout tree — dimensions, display mode, position, framework, Tailwind |
+| `get_scroll_tree` | Scroll containers + sticky elements + scroll offsets |
+| `query_layout` | Run custom JS queries against the layout tree |
+| `capture_page` | Annotated screenshot |
 
-| Tool | What it answers |
-|------|----------------|
-| `inspect_element` | "Why does this element look wrong? Show me every CSS rule." |
-| `trace_property` | "Where does this min-width come from? Full cascade." |
-| `compare_elements` | "Are these two elements aligned?" |
+### Element deep-dive
+
+| Tool | Data |
+|------|------|
+| `inspect_element` | Box model, CSS rules (file:line), event listeners, React component |
+| `trace_property` | Full CSS cascade with specificity for one property |
+| `compare_elements` | Geometric diff between two elements |
 
 ### Monitoring
 
-| Tool | What it answers |
-|------|----------------|
-| `detect_layout_shifts` | "What moved after page load?" |
-| `check_animations` | "Are any animations stuck or running on hidden elements?" |
-| `compare_color_schemes` | "Does dark mode break anything?" |
-| `check_interactive_states` | "Do all buttons have hover/focus feedback?" |
-| `watch_dom_mutations` | "Is something re-rendering in a loop?" |
-| `profile_rendering` | "Is the page janky? What's the FPS?" |
-| `test_responsive` | "Does the layout break on mobile/tablet?" |
+| Tool | Data |
+|------|------|
+| `watch_dom_mutations` | DOM changes over a fixed duration |
+| `profile_rendering` | FPS, jank frames, frame timing |
+| `detect_layout_shifts` | CLS score + which elements shifted |
+| `check_animations` | Animation state — running, stuck, hidden |
+| `compare_color_schemes` | Light vs dark mode element-by-element diff |
+| `check_interactive_states` | Hover/focus feedback check (WCAG 2.4.7) |
+| `test_responsive` | 6-viewport sweep — what overflows, what disappears |
 
-## What It Extracts
+## Per element
 
-Per element: geometry, 35+ computed styles, box model (margin/border/padding/content), text content, pseudo-elements, accessibility attributes, stacking context, scroll state, natural image dimensions, shadow DOM boundaries.
+Geometry, 35+ computed styles, box model (margin/border/padding/content), text content, pseudo-elements (::before/::after), accessibility (role, aria-label, aria-hidden, tabindex), stacking context, scroll state, natural image dimensions, shadow DOM boundaries.
 
 ## Enrichments
 
-- **Framework detection** -- React, Vue, Angular, Svelte, Next.js, Nuxt
-- **React component mapping** -- `<div class="css-1a2b3c">` becomes `<ProductCard>`
-- **Tailwind CSS** -- suggests Tailwind class fixes in diagnostics
-- **Shadow DOM** -- pierces shadow roots in extraction
-
-## 10 Issue Detectors
-
-Overflow, stacking/z-index, visibility, flex/grid, scroll containers, margin collapse, text truncation, image distortion, whitespace gaps, fixed element collisions.
-
-Each issue includes: **what** > **where** > **why** (cause chain with CSS rule source file:line) > **impact**.
+- **Framework detection** — React, Vue, Angular, Svelte, Next.js, Nuxt
+- **React component mapping** — `<div class="css-1a2b3c">` becomes `<ProductCard>` with component hierarchy
+- **Tailwind CSS** — detected and noted in layout overview
+- **Shadow DOM** — pierced in extraction
 
 ## Requirements
 
 - Node.js 18+
 - Chrome/Chromium with `--remote-debugging-port=9222`
-
-## Development
-
-```bash
-git clone https://github.com/Jason59000/layout-lens.git
-cd layout-lens
-npm install
-npm run dev      # Start MCP server (tsx)
-npm run build    # Compile TypeScript
-npx tsc --noEmit # Type check
-npm test         # Run tests
-```
 
 ## License
 

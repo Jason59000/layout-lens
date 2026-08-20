@@ -43,6 +43,8 @@ interface BatchNode {
   width: string; height: string;
   whiteSpace: string; textOverflow: string; objectFit: string;
   color: string; bgColor: string; fontSize: string; lineHeight: string;
+  pointerEvents: string; cursor: string; touchAction: string;
+  contain: string; contentVisibility: string; containerType: string; aspectRatio: string;
   stickyTop: string; stickyBottom: string; stickyLeft: string; stickyRight: string;
   // Natural size (images only)
   nw?: number; nh?: number;
@@ -99,6 +101,8 @@ const BATCH_EXTRACT_JS = `(function() {
     "min-width","max-width","min-height","max-height",
     "width","height","white-space","text-overflow","object-fit",
     "color","background-color","font-size","line-height",
+    "pointer-events","cursor","touch-action",
+    "contain","content-visibility","container-type","aspect-ratio",
     "margin-top","margin-right","margin-bottom","margin-left",
     "padding-top","padding-right","padding-bottom","padding-left",
     "border-top-width","border-right-width","border-bottom-width","border-left-width",
@@ -164,6 +168,10 @@ const BATCH_EXTRACT_JS = `(function() {
       objectFit: v["object-fit"],
       color: v["color"], bgColor: v["background-color"],
       fontSize: v["font-size"], lineHeight: v["line-height"],
+      pointerEvents: v["pointer-events"], cursor: v["cursor"],
+      touchAction: v["touch-action"], contain: v["contain"],
+      contentVisibility: v["content-visibility"],
+      containerType: v["container-type"], aspectRatio: v["aspect-ratio"],
       stickyTop: v["top"], stickyBottom: v["bottom"],
       stickyLeft: v["left"], stickyRight: v["right"],
       ch: ch
@@ -806,6 +814,13 @@ export class LayoutExtractor {
       whiteSpace: get("white-space"),
       textOverflow: get("text-overflow"),
       objectFit: getOpt("object-fit"),
+      pointerEvents: getOpt("pointer-events"),
+      cursor: getOpt("cursor"),
+      touchAction: getOpt("touch-action"),
+      contain: getOpt("contain"),
+      contentVisibility: getOpt("content-visibility"),
+      containerType: getOpt("container-type"),
+      aspectRatio: getOpt("aspect-ratio"),
     };
 
     // Position sticky offsets
@@ -1105,6 +1120,13 @@ function batchToComputed(raw: BatchNode): ComputedStyles {
     backgroundColor: raw.bgColor || undefined,
     fontSize: raw.fontSize || undefined,
     lineHeight: raw.lineHeight || undefined,
+    pointerEvents: raw.pointerEvents || undefined,
+    cursor: raw.cursor || undefined,
+    touchAction: raw.touchAction || undefined,
+    contain: raw.contain || undefined,
+    contentVisibility: raw.contentVisibility || undefined,
+    containerType: raw.containerType || undefined,
+    aspectRatio: raw.aspectRatio || undefined,
   };
 
   if (raw.position === "sticky") {

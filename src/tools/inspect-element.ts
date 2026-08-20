@@ -2,19 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CDPConnection } from "../cdp/connection.js";
 import { LayoutExtractor } from "../cdp/extractor.js";
-import type { Detector, Issue, LayoutNode, LayoutTree } from "../types.js";
-import { OverflowDetector } from "../detectors/overflow.js";
-import { StackingDetector } from "../detectors/stacking.js";
-import { VisibilityDetector } from "../detectors/visibility.js";
-import { FlexGridDetector } from "../detectors/flex-grid.js";
-import { ScrollDetector } from "../detectors/scroll.js";
-import { MarginCollapseDetector } from "../detectors/margin-collapse.js";
-import { TextTruncationDetector } from "../detectors/text-truncation.js";
-import { ImageDistortionDetector } from "../detectors/image-distortion.js";
-import { WhitespaceDetector } from "../detectors/whitespace.js";
-import { FixedCollisionDetector } from "../detectors/fixed-collision.js";
+import type { LayoutNode, LayoutTree } from "../types.js";
+import { walkTree } from "../types.js";
 import { formatElement } from "../formatter/text.js";
-import { walkTree } from "../detectors/types.js";
 
 /**
  * Find a node in the tree by matching its selector path.
@@ -72,7 +62,7 @@ function buildMatchSelector(node: LayoutNode): string {
 export function registerInspectElement(server: McpServer): void {
   server.tool(
     "inspect_element",
-    "Inspect a specific element by CSS selector. Returns detailed box model, computed styles, parent relationship, stacking context, and any detected issues.",
+    "Inspect a specific element by CSS selector. Returns detailed box model, computed styles, CSS rules, parent relationship, stacking context, event listeners, and React component mapping.",
     {
       selector: z.string().describe("CSS selector to find the element (e.g. '#my-id', '.my-class', 'div.container')"),
       port: z.number().optional().describe("Chrome debugging port (default: 9222)"),
@@ -95,25 +85,6 @@ export function registerInspectElement(server: McpServer): void {
             content: [{ type: "text", text: `Element not found: "${params.selector}". Try a different selector.` }],
             isError: true,
           };
-        }
-
-        // Run all detectors to find issues related to this element
-        const detectors: Detector[] = [
-          new OverflowDetector(),
-          new StackingDetector(),
-          new VisibilityDetector(),
-          new FlexGridDetector(),
-          new ScrollDetector(),
-          new MarginCollapseDetector(),
-          new TextTruncationDetector(),
-          new ImageDistortionDetector(),
-          new WhitespaceDetector(),
-          new FixedCollisionDetector(),
-        ];
-
-        const issues: Issue[] = [];
-        for (const detector of detectors) {
-          issues.push(...detector.detect(tree));
         }
 
         let eventListeners: string[] = [];
@@ -163,7 +134,7 @@ export function registerInspectElement(server: McpServer): void {
           // React not available or element not a React component
         }
 
-        let text = formatElement(node, tree, issues);
+        let text = formatElement(node, tree);
 
         if (reactComponent) {
           const componentLine = `\n  component: <${reactComponent.name}>`;
