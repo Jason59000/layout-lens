@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Dev Journal — Building Scalable APIs</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Georgia, 'Times New Roman', serif; color: #2c2c2c; background: #fafaf8; }
+
+    /* --- Nav --- */
+    .nav {
+      position: sticky;
+      top: 0;
+      background: white;
+      border-bottom: 1px solid #e5e5e5;
+      padding: 16px 0;
+      z-index: 10;
+    }
+    .nav-inner {
+      max-width: 740px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 20px;
+    }
+    .nav .site-name { font-size: 20px; font-weight: 700; text-decoration: none; color: #2c2c2c; }
+    .nav-links { display: flex; gap: 20px; }
+    .nav-links a { text-decoration: none; color: #666; font-size: 14px; font-family: system-ui, sans-serif; }
+
+    /* --- Article --- */
+    .article {
+      max-width: 740px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    .article-header { margin-bottom: 32px; }
+    .article-header h1 {
+      font-size: 40px;
+      line-height: 1.2;
+      margin-bottom: 16px;
+    }
+    .article-meta {
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      color: #888;
+    }
+    .article-meta .author { color: #2c2c2c; font-weight: 600; }
+
+    .article-body { font-size: 18px; line-height: 1.8; }
+    .article-body p { margin-bottom: 24px; }
+    .article-body h2 {
+      font-size: 28px;
+      margin: 48px 0 16px;
+    }
+    .article-body h3 {
+      font-size: 22px;
+      margin: 32px 0 12px;
+    }
+
+    /* Code block */
+    .code-block {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      overflow-x: hidden;
+      /* BUG: should be overflow-x: auto — long code lines get clipped */
+    }
+    .code-block .keyword { color: #569cd6; }
+    .code-block .string { color: #ce9178; }
+    .code-block .comment { color: #6a9955; }
+    .code-block .func { color: #dcdcaa; }
+
+    /* Inline code */
+    .article-body code {
+      background: #f0f0f0;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 15px;
+      font-family: 'Fira Code', 'Consolas', monospace;
+    }
+
+    /* Blockquote */
+    .article-body blockquote {
+      border-left: 4px solid #e5e5e5;
+      padding: 12px 20px;
+      margin: 24px 0;
+      color: #555;
+      font-style: italic;
+    }
+
+    /* Image in article */
+    .article-img {
+      width: 100%;
+      height: 350px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      /* BUG: fixed height without object-fit on a wide image */
+    }
+    .img-caption {
+      text-align: center;
+      font-size: 13px;
+      color: #999;
+      font-family: system-ui, sans-serif;
+      margin-top: -16px;
+      margin-bottom: 24px;
+    }
+
+    /* --- Table of contents (sidebar) --- */
+    .toc {
+      position: fixed;
+      top: 80px;
+      right: 40px;
+      width: 200px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+    }
+    .toc h4 { font-size: 11px; text-transform: uppercase; color: #888; margin-bottom: 12px; letter-spacing: 1px; }
+    .toc a {
+      display: block;
+      padding: 4px 0;
+      color: #666;
+      text-decoration: none;
+      border-left: 2px solid transparent;
+      padding-left: 12px;
+    }
+    .toc a.active { color: #2c2c2c; border-left-color: #2c2c2c; font-weight: 600; }
+
+    /* --- Author card --- */
+    .author-card {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      padding: 24px;
+      background: white;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      margin: 48px 0;
+    }
+    .author-card img {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      /* BUG: square avatar source forced into circle, might clip or distort */
+    }
+    .author-card .bio { font-family: system-ui, sans-serif; font-size: 14px; color: #555; line-height: 1.5; }
+    .author-card .name { font-weight: 700; font-size: 16px; color: #2c2c2c; margin-bottom: 4px; }
+
+    /* --- Related posts --- */
+    .related-posts { margin: 48px 0; }
+    .related-posts h3 { font-size: 20px; margin-bottom: 20px; }
+    .related-grid {
+      display: flex;
+      gap: 20px;
+    }
+    .related-card {
+      flex: 1;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      overflow: hidden;
+      background: white;
+    }
+    .related-card img {
+      width: 100%;
+      height: 140px;
+      /* BUG: no object-fit */
+    }
+    .related-card .title {
+      padding: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.3;
+      /* BUG: long titles just overflow with no truncation or wrapping limit */
+    }
+    .related-card .date {
+      padding: 0 12px 12px;
+      font-size: 12px;
+      color: #999;
+      font-family: system-ui, sans-serif;
+    }
+
+    /* --- Comments --- */
+    .comments-section { margin: 48px 0; }
+    .comments-section h3 { font-size: 20px; margin-bottom: 20px; }
+    .comment {
+      padding: 16px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .comment .comment-author {
+      font-family: system-ui, sans-serif;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .comment .comment-date {
+      font-family: system-ui, sans-serif;
+      font-size: 12px;
+      color: #999;
+      margin-left: 8px;
+    }
+    .comment .comment-body {
+      margin-top: 8px;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    /* --- Floating share bar --- */
+    .share-bar {
+      position: fixed;
+      left: 40px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .share-btn {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      border: 1px solid #ddd;
+      background: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      cursor: pointer;
+      color: #666;
+    }
+
+    /* --- Cookie banner --- */
+    .cookie-banner {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #2c2c2c;
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 5;
+      /* BUG: z-index lower than share-bar (no z-index = auto),
+         but also lower than potential modal. Layering will be messy */
+    }
+    .cookie-banner p { font-family: system-ui, sans-serif; font-size: 14px; }
+    .cookie-banner button {
+      background: white;
+      color: #2c2c2c;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="#" class="site-name">The Dev Journal</a>
+      <div class="nav-links">
+        <a href="#">Articles</a>
+        <a href="#">Topics</a>
+        <a href="#">About</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="share-bar">
+    <button class="share-btn">🔗</button>
+    <button class="share-btn">𝕏</button>
+    <button class="share-btn">in</button>
+  </div>
+
+  <div class="toc">
+    <h4>Contents</h4>
+    <a href="#" class="active">Introduction</a>
+    <a href="#">The Problem</a>
+    <a href="#">Architecture</a>
+    <a href="#">Implementation</a>
+    <a href="#">Performance</a>
+    <a href="#">Conclusion</a>
+  </div>
+
+  <article class="article">
+    <header class="article-header">
+      <h1>Building Scalable APIs: Lessons from Serving 10M Requests per Day</h1>
+      <div class="article-meta">
+        By <span class="author">Chris Anderson</span> · August 15, 2025 · 12 min read
+      </div>
+    </header>
+
+    <div class="article-body">
+      <p>When we first launched our API, it handled about 50 requests per second. Fast forward two years, and we're now processing over 115 requests per second at peak, serving 10 million requests daily. Here's what we learned along the way.</p>
+
+      <img class="article-img" src="https://picsum.photos/id/0/1200/600" alt="Server architecture diagram">
+      <div class="img-caption">Our API architecture evolution over two years</div>
+
+      <h2>The Problem</h2>
+      <p>Most developers think scaling is about adding more servers. In reality, the biggest wins come from understanding your data access patterns and optimizing at the application layer. We spent three months rewriting our query layer before adding a single server.</p>
+
+      <blockquote>
+        "Premature optimization is the root of all evil, but premature scaling is the root of all bankruptcy."
+        — Someone on Hacker News, probably
+      </blockquote>
+
+      <h2>Architecture</h2>
+      <p>Our stack is fairly standard: Node.js with Express, PostgreSQL for persistent storage, Redis for caching, and a message queue for async processing. What makes it work is the layered caching strategy.</p>
+
+      <div class="code-block">
+<span class="comment">// Rate limiter middleware with sliding window</span>
+<span class="keyword">const</span> <span class="func">rateLimiter</span> = <span class="keyword">async</span> (req, res, next) => {
+  <span class="keyword">const</span> key = <span class="string">`rate:${req.ip}:${Math.floor(Date.now() / 60000)}`</span>;
+  <span class="keyword">const</span> count = <span class="keyword">await</span> redis.<span class="func">incr</span>(key);
+  <span class="keyword">if</span> (count === 1) <span class="keyword">await</span> redis.<span class="func">expire</span>(key, 60);
+  <span class="keyword">if</span> (count > RATE_LIMIT) <span class="keyword">return</span> res.<span class="func">status</span>(429).<span class="func">json</span>({ error: <span class="string">'Too many requests, please try again later. Current limit is 100 requests per minute per IP address.'</span> });
+  <span class="func">next</span>();
+};
+      </div>
+
+      <h3>Caching Strategy</h3>
+      <p>We use three levels of caching: in-memory LRU cache for hot paths (sub-millisecond), Redis for shared cache across instances (1-2ms), and CDN edge caching for public endpoints. The key insight was that 80% of our traffic hits the same 200 endpoints.</p>
+
+      <h2>Implementation</h2>
+      <p>The migration took six weeks. We started with the read-heavy endpoints, moving them to a CQRS pattern where reads go through the cache layer and writes go directly to PostgreSQL with cache invalidation.</p>
+
+      <div class="code-block">
+<span class="comment">// Connection pool configuration — don't use defaults!</span>
+<span class="keyword">const</span> pool = <span class="keyword">new</span> <span class="func">Pool</span>({
+  max: 20,                             <span class="comment">// max connections</span>
+  idleTimeoutMillis: 30000,            <span class="comment">// close idle connections after 30s</span>
+  connectionTimeoutMillis: 2000,       <span class="comment">// fail fast if can't connect in 2s</span>
+  statement_timeout: <span class="string">'10s'</span>,             <span class="comment">// kill queries running longer than 10s — this saved us during the incident on March 3rd when a missing index caused a full table scan on the 50M row events table</span>
+});
+      </div>
+
+      <h2>Performance Results</h2>
+      <p>After the optimization, our p99 latency dropped from 850ms to 45ms. The infrastructure cost went down by 40% despite handling 3x more traffic. Sometimes less is more.</p>
+
+      <h2>Conclusion</h2>
+      <p>Scaling isn't about throwing hardware at the problem. It's about understanding your workload, measuring everything, and optimizing the right things. Start with your database queries, add caching strategically, and only then think about horizontal scaling.</p>
+    </div>
+
+    <div class="author-card">
+      <img src="https://picsum.photos/id/64/200/200" alt="Chris Anderson">
+      <div>
+        <div class="name">Chris Anderson</div>
+        <div class="bio">Staff Engineer at DataFlow. Previously at Stripe and Google. Writes about backend architecture, distributed systems, and developer tooling.</div>
+      </div>
+    </div>
+
+    <section class="related-posts">
+      <h3>Related Articles</h3>
+      <div class="related-grid">
+        <div class="related-card">
+          <img src="https://picsum.photos/id/180/400/250" alt="">
+          <div class="title">Understanding Database Connection Pooling: A Complete Guide for Production Systems</div>
+          <div class="date">July 28, 2025</div>
+        </div>
+        <div class="related-card">
+          <img src="https://picsum.photos/id/1/400/200" alt="">
+          <div class="title">Redis Caching Patterns</div>
+          <div class="date">July 12, 2025</div>
+        </div>
+        <div class="related-card">
+          <img src="https://picsum.photos/id/48/400/350" alt="">
+          <div class="title">Monitoring Node.js in Production</div>
+          <div class="date">June 30, 2025</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="comments-section">
+      <h3>Comments (4)</h3>
+      <div class="comment">
+        <span class="comment-author">devops_sarah</span>
+        <span class="comment-date">2 days ago</span>
+        <div class="comment-body">Great write-up! We had a similar experience migrating from a monolithic API to microservices. The caching layer was key for us too. One thing I'd add is the importance of cache warming strategies.</div>
+      </div>
+      <div class="comment">
+        <span class="comment-author">rustacean42</span>
+        <span class="comment-date">1 day ago</span>
+        <div class="comment-body">Interesting approach. Have you considered switching to Rust for the hot paths? We saw a 10x improvement in throughput for similar workloads.</div>
+      </div>
+      <div class="comment">
+        <span class="comment-author">junior_dev_learning</span>
+        <span class="comment-date">12 hours ago</span>
+        <div class="comment-body">This is really helpful for someone just starting out with backend dev. The code examples are particularly useful. Bookmarked!</div>
+      </div>
+    </section>
+  </article>
+
+  <div class="cookie-banner">
+    <p>We use cookies to improve your experience. By continuing to browse, you agree to our cookie policy.</p>
+    <button>Accept</button>
+  </div>
+
+</body>
+</html>
