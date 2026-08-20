@@ -42,9 +42,9 @@
 - [ ] 8h. Text layout / inline text boxes (DOMSnapshot) — rectangles par ligne, wrap, ellipsis
 
 ### Batch 6 — Interaction + focus
-- [ ] 8i. Focus chain — activeElement, tab order, inert, disabled, focus trap
-- [ ] 8j. Interaction state — combinaison pointer-events/inert/disabled/aria-disabled/hidden
-- [ ] 8k. Scroll ownership chain — élément → scroll container → clip → sticky capture
+- [x] 8i. Focus chain — activeElement, tab order, inert, disabled, focus trap
+- [x] 8j. Interaction state — combinaison pointer-events/inert/disabled/aria-disabled/hidden
+- [x] 8k. Scroll ownership chain — élément → scroll container → clip → sticky capture
 
 ### Batch 7 — Layout avancé
 - [ ] 8l. Grid/Flex resolved geometry — tracks résolues, placement items

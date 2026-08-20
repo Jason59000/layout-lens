@@ -321,6 +321,120 @@ export function registerInspectElement(server: McpServer): void {
           // getPlatformFontsForNode may not be available
         }
 
+        let interactionState: { interactive: boolean; reasons: string[] } | null = null;
+        try {
+          const client = connection.client;
+          const escapedSel4 = JSON.stringify(params.selector);
+          const intResult = await client.Runtime.evaluate({
+            expression: `(function() {
+              var el = document.querySelector(${escapedSel4});
+              if (!el) return null;
+              var reasons = [];
+              var cs = getComputedStyle(el);
+              if (cs.pointerEvents === "none") reasons.push("pointer-events: none");
+              if (cs.visibility === "hidden") reasons.push("visibility: hidden");
+              if (cs.opacity === "0") reasons.push("opacity: 0");
+              if (el.inert) reasons.push("inert");
+              if (el.disabled) reasons.push("disabled");
+              if (el.getAttribute("aria-disabled") === "true") reasons.push("aria-disabled");
+              if (el.getAttribute("aria-hidden") === "true") reasons.push("aria-hidden");
+              if (cs.display === "none") reasons.push("display: none");
+              var p = el.parentElement;
+              while (p) {
+                if (p.inert) { reasons.push("ancestor inert: " + (p.tagName.toLowerCase())); break; }
+                p = p.parentElement;
+              }
+              return JSON.stringify({ interactive: reasons.length === 0, reasons: reasons });
+            })()`,
+            returnByValue: true,
+          });
+          if (intResult.result.value) {
+            interactionState = JSON.parse(intResult.result.value as string);
+          }
+        } catch {
+          // interaction state is best-effort
+        }
+
+        let focusInfo: { isFocused: boolean; tabIndex: number | null; focusable: boolean; inertAncestor: string | null } | null = null;
+        try {
+          const client = connection.client;
+          const escapedSel5 = JSON.stringify(params.selector);
+          const focusResult = await client.Runtime.evaluate({
+            expression: `(function() {
+              var el = document.querySelector(${escapedSel5});
+              if (!el) return null;
+              var isFocused = document.activeElement === el;
+              var tabIdx = el.getAttribute("tabindex");
+              var focusable = el.tabIndex >= 0;
+              var inertAnc = null;
+              var p = el;
+              while (p) {
+                if (p.inert) {
+                  var t = p.tagName.toLowerCase();
+                  if (p.id) t += "#" + p.id;
+                  inertAnc = t;
+                  break;
+                }
+                p = p.parentElement;
+              }
+              return JSON.stringify({
+                isFocused: isFocused,
+                tabIndex: tabIdx !== null ? parseInt(tabIdx, 10) : null,
+                focusable: focusable,
+                inertAncestor: inertAnc
+              });
+            })()`,
+            returnByValue: true,
+          });
+          if (focusResult.result.value) {
+            focusInfo = JSON.parse(focusResult.result.value as string);
+          }
+        } catch {
+          // focus info is best-effort
+        }
+
+        let scrollOwnership: Array<{ selector: string; overflow: string; scrollable: string }> | null = null;
+        try {
+          const client = connection.client;
+          const escapedSel6 = JSON.stringify(params.selector);
+          const scrollResult = await client.Runtime.evaluate({
+            expression: `(function() {
+              var el = document.querySelector(${escapedSel6});
+              if (!el) return null;
+              var chain = [];
+              var p = el.parentElement;
+              while (p && p !== document.documentElement) {
+                var cs = getComputedStyle(p);
+                var ox = cs.overflowX, oy = cs.overflowY;
+                if (ox !== "visible" || oy !== "visible") {
+                  var t = p.tagName.toLowerCase();
+                  if (p.id) t += "#" + p.id;
+                  else if (p.className && typeof p.className === "string") {
+                    var c = p.className.split(/\\s+/).filter(Boolean);
+                    if (c.length > 0) t += "." + c[0];
+                  }
+                  var dirs = [];
+                  if (p.scrollWidth > p.clientWidth) dirs.push("horizontal");
+                  if (p.scrollHeight > p.clientHeight) dirs.push("vertical");
+                  chain.push({
+                    selector: t,
+                    overflow: ox + "/" + oy,
+                    scrollable: dirs.length > 0 ? dirs.join("+") : "no overflow"
+                  });
+                }
+                p = p.parentElement;
+              }
+              return chain.length > 0 ? JSON.stringify(chain) : null;
+            })()`,
+            returnByValue: true,
+          });
+          if (scrollResult.result.value) {
+            scrollOwnership = JSON.parse(scrollResult.result.value as string);
+          }
+        } catch {
+          // scroll ownership is best-effort
+        }
+
         let text = formatElement(node, tree);
 
         if (reactComponent) {
@@ -358,6 +472,30 @@ export function registerInspectElement(server: McpServer): void {
           text += "\n\nCLIPPING CHAIN:";
           for (const clip of clippingChain) {
             text += `\n  ${clip.selector}: ${clip.reasons.join(", ")}`;
+          }
+        }
+
+        if (interactionState) {
+          text += `\n\nINTERACTION STATE: ${interactionState.interactive ? "INTERACTIVE" : "BLOCKED"}`;
+          if (interactionState.reasons.length > 0) {
+            for (const r of interactionState.reasons) {
+              text += `\n  ${r}`;
+            }
+          }
+        }
+
+        if (focusInfo) {
+          text += "\n\nFOCUS:";
+          text += `\n  focusable: ${focusInfo.focusable}`;
+          if (focusInfo.tabIndex !== null) text += `\n  tabindex: ${focusInfo.tabIndex}`;
+          if (focusInfo.isFocused) text += "\n  currently focused: YES";
+          if (focusInfo.inertAncestor) text += `\n  blocked by inert ancestor: ${focusInfo.inertAncestor}`;
+        }
+
+        if (scrollOwnership && scrollOwnership.length > 0) {
+          text += "\n\nSCROLL OWNERSHIP CHAIN:";
+          for (const s of scrollOwnership) {
+            text += `\n  ${s.selector}: overflow ${s.overflow}, ${s.scrollable}`;
           }
         }
 
