@@ -60,26 +60,6 @@ export function registerGetPerformanceMetrics(server: McpServer): void {
         lines.push(`  task duration: ${(get("TaskDuration") * 1000).toFixed(1)} ms`);
         lines.push("");
 
-        const layoutDur = get("LayoutDuration") * 1000;
-        const recalcDur = get("RecalcStyleDuration") * 1000;
-        const scriptDur = get("ScriptDuration") * 1000;
-        const nodeCount = get("Nodes");
-
-        const warnings: string[] = [];
-        if (heapUsed > 100 * 1024 * 1024) warnings.push(`heap > 100 MB (${(heapUsed / 1024 / 1024).toFixed(0)} MB)`);
-        if (nodeCount > 3000) warnings.push(`${nodeCount} DOM nodes (recommended < 1500)`);
-        if (layoutDur > 100) warnings.push(`layout duration ${layoutDur.toFixed(0)} ms`);
-        if (recalcDur > 100) warnings.push(`style recalc duration ${recalcDur.toFixed(0)} ms`);
-        if (scriptDur > 1000) warnings.push(`script duration ${scriptDur.toFixed(0)} ms`);
-        if (get("JSEventListeners") > 500) warnings.push(`${get("JSEventListeners")} event listeners`);
-
-        if (warnings.length > 0) {
-          lines.push("WARNINGS:");
-          for (const w of warnings) {
-            lines.push(`  ${w}`);
-          }
-        }
-
         let resourceInfo = "";
         try {
           const resResult = await client.Runtime.evaluate({

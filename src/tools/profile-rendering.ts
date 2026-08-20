@@ -72,16 +72,6 @@ function formatProfile(data: FrameData): string {
   lines.push(`  >50ms:   ${dist.severe} frame${dist.severe !== 1 ? "s" : ""} (${((dist.severe / totalIntervals) * 100).toFixed(1)}%) — severe jank`);
   lines.push("");
 
-  if (avgFps >= 55 && jankFrames / totalIntervals < 0.05) {
-    lines.push("VERDICT: smooth rendering, no issues detected");
-  } else if (avgFps >= 50 && jankFrames / totalIntervals < 0.1) {
-    lines.push("VERDICT: mostly smooth, occasional jank");
-  } else if (avgFps >= 30) {
-    lines.push("VERDICT: noticeable jank, investigate heavy frames");
-  } else {
-    lines.push("VERDICT: severe performance issues, rendering is not keeping up");
-  }
-
   return lines.join("\n");
 }
 

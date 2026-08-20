@@ -1,3 +1,4 @@
+import type CDP from "chrome-remote-interface";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CDPConnection } from "../cdp/connection.js";
@@ -5,11 +6,15 @@ import { LayoutExtractor } from "../cdp/extractor.js";
 import type { LayoutNode, LayoutTree } from "../types.js";
 import { walkTree } from "../types.js";
 import { formatElement } from "../formatter/text.js";
+import { getContainingBlock } from "../cdp/containing-block.js";
+import { getHitTest } from "../cdp/hit-testing.js";
+import { getClippingChain } from "../cdp/clipping.js";
+import { getPlatformFonts } from "../cdp/fonts.js";
+import { getInteractionState, getFocusInfo } from "../cdp/interaction.js";
+import { getFlexGridGeometry } from "../cdp/flex-grid.js";
+import { getTransformChain } from "../cdp/transforms.js";
+import { getScrollOwnership } from "../cdp/scroll-ownership.js";
 
-/**
- * Find a node in the tree by matching its selector path.
- * Matches against tag, id, classes.
- */
 function findNodeBySelector(
   tree: LayoutTree,
   selector: string,
@@ -18,15 +23,13 @@ function findNodeBySelector(
   let match: LayoutNode | undefined;
 
   walkTree(tree, (node) => {
-    if (match) return; // already found
+    if (match) return;
 
-    // Match by id
     if (selector.startsWith("#") && node.id === selector.slice(1)) {
       match = node;
       return;
     }
 
-    // Match by class
     if (selector.startsWith(".")) {
       const className = selector.slice(1);
       if (node.classes.includes(className)) {
@@ -35,14 +38,12 @@ function findNodeBySelector(
       }
     }
 
-    // Match full selector (tag.class or tag#id)
     const nodeSelector = buildMatchSelector(node);
     if (nodeSelector.toLowerCase() === selectorLower) {
       match = node;
       return;
     }
 
-    // Match the node's own selector property
     if (node.selector.toLowerCase() === selectorLower) {
       match = node;
       return;
@@ -87,512 +88,41 @@ export function registerInspectElement(server: McpServer): void {
           };
         }
 
-        let eventListeners: string[] = [];
-        try {
-          const client = connection.client;
-          const resolved = await client.DOM.resolveNode({ nodeId: node.nodeId });
-          if (resolved.object.objectId) {
-            const listeners = await client.DOMDebugger.getEventListeners({
-              objectId: resolved.object.objectId,
-            });
-            eventListeners = listeners.listeners.map(
-              (l) => `${l.type}${l.once ? " (once)" : ""}${l.passive ? " (passive)" : ""}`,
-            );
-          }
-        } catch {
-          // DOMDebugger may not be available
-        }
+        const client = connection.client;
+        const sel = params.selector;
+        const matchLabel = buildMatchSelector(node);
 
-        let reactComponent: { name: string; hierarchy: string[] } | null = null;
-        try {
-          const client = connection.client;
-          const escapedSelector = JSON.stringify(params.selector);
-          const reactResult = await client.Runtime.evaluate({
-            expression: `(function() {
-              var el = document.querySelector(${escapedSelector});
-              if (!el) return null;
-              var key = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'); });
-              if (!key) return null;
-              var fiber = el[key];
-              var components = [];
-              var f = fiber;
-              while (f) {
-                if (f.type && typeof f.type === 'function') {
-                  components.push(f.type.displayName || f.type.name || '(anonymous)');
-                }
-                f = f.return;
-                if (components.length > 5) break;
-              }
-              return components.length > 0 ? JSON.stringify({ name: components[0], hierarchy: components.reverse() }) : null;
-            })()`,
-            returnByValue: true,
-          });
-          if (reactResult.result.value) {
-            reactComponent = JSON.parse(reactResult.result.value as string);
-          }
-        } catch {
-          // React not available or element not a React component
-        }
-
-        let cssVariables: Array<{ name: string; value: string }> = [];
-        try {
-          const client = connection.client;
-          const { computedStyle } = await client.CSS.getComputedStyleForNode({ nodeId: node.nodeId });
-          cssVariables = computedStyle
-            .filter(p => p.name.startsWith("--"))
-            .map(p => ({ name: p.name, value: p.value }));
-        } catch {
-          // CSS domain may not be available
-        }
-
-        let blendedBackgroundColor: string | undefined;
-        try {
-          const client = connection.client;
-          const bgResult = await (client.CSS as any).getBackgroundColors({ nodeId: node.nodeId });
-          if (bgResult.backgroundColors && bgResult.backgroundColors.length > 0) {
-            blendedBackgroundColor = bgResult.backgroundColors[0];
-          }
-        } catch {
-          // getBackgroundColors may not be available
-        }
-
-        let containingBlock: { selector: string; reason: string } | undefined;
-        try {
-          const client = connection.client;
-          const escapedSel = JSON.stringify(params.selector);
-          const cbResult = await client.Runtime.evaluate({
-            expression: `(function() {
-              var el = document.querySelector(${escapedSel});
-              if (!el) return null;
-              var cs = getComputedStyle(el);
-              var pos = cs.position;
-              if (pos === "static" || pos === "relative") return null;
-              function desc(e) {
-                var t = e.tagName.toLowerCase();
-                if (e.id) return t + "#" + e.id;
-                var cn = e.className;
-                if (cn && typeof cn === "string") {
-                  var c = cn.split(/\\s+/).filter(Boolean);
-                  if (c.length > 0) return t + "." + c[0];
-                }
-                return t;
-              }
-              if (pos === "absolute") {
-                var p = el.parentElement;
-                while (p && p !== document.documentElement) {
-                  if (getComputedStyle(p).position !== "static") {
-                    return JSON.stringify({ selector: desc(p), reason: "position: " + getComputedStyle(p).position });
-                  }
-                  p = p.parentElement;
-                }
-                return JSON.stringify({ selector: "viewport", reason: "initial containing block" });
-              }
-              if (pos === "fixed") {
-                var p = el.parentElement;
-                while (p && p !== document.documentElement) {
-                  var pcs = getComputedStyle(p);
-                  if (pcs.transform !== "none") return JSON.stringify({ selector: desc(p), reason: "transform" });
-                  if (pcs.filter !== "none") return JSON.stringify({ selector: desc(p), reason: "filter" });
-                  var cnt = pcs.contain;
-                  if (cnt === "paint" || cnt === "layout" || cnt === "strict" || cnt === "content") {
-                    return JSON.stringify({ selector: desc(p), reason: "contain: " + cnt });
-                  }
-                  p = p.parentElement;
-                }
-                return JSON.stringify({ selector: "viewport", reason: "fixed positioning" });
-              }
-              if (pos === "sticky") {
-                var p = el.parentElement;
-                while (p && p !== document.documentElement) {
-                  var pcs = getComputedStyle(p);
-                  if (pcs.overflowX !== "visible" || pcs.overflowY !== "visible") {
-                    return JSON.stringify({ selector: desc(p), reason: "overflow: " + pcs.overflowX + "/" + pcs.overflowY });
-                  }
-                  p = p.parentElement;
-                }
-                return JSON.stringify({ selector: "viewport", reason: "no overflow ancestor" });
-              }
-              return null;
-            })()`,
-            returnByValue: true,
-          });
-          if (cbResult.result.value) {
-            containingBlock = JSON.parse(cbResult.result.value as string);
-          }
-        } catch {
-          // containing block detection is best-effort
-        }
-
-        let hitTestResult: {
-          point: { x: number; y: number };
-          topmost: string;
-          topmostIgnoringPointerEvents: string;
-          stack: string[];
-          elementIndex: number;
-          blocked: boolean;
-        } | null = null;
-        try {
-          const client = connection.client;
-          const escapedSel2 = JSON.stringify(params.selector);
-          const centerResult = await client.Runtime.evaluate({
-            expression: `(function() {
-              var el = document.querySelector(${escapedSel2});
-              if (!el) return null;
-              var r = el.getBoundingClientRect();
-              return JSON.stringify({ x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) });
-            })()`,
-            returnByValue: true,
-          });
-          if (centerResult.result.value) {
-            const center = JSON.parse(centerResult.result.value as string);
-            const [normalHit, ignoreHit, stackResult] = await Promise.all([
-              (client.DOM as any).getNodeForLocation({ x: center.x, y: center.y, includeUserAgentShadowDOM: false }).catch(() => null),
-              (client.DOM as any).getNodeForLocation({ x: center.x, y: center.y, includeUserAgentShadowDOM: false, ignorePointerEventsNone: true }).catch(() => null),
-              client.Runtime.evaluate({
-                expression: `(function() {
-                  var stack = document.elementsFromPoint(${center.x}, ${center.y});
-                  return JSON.stringify(stack.slice(0, 10).map(function(e) {
-                    var t = e.tagName.toLowerCase();
-                    if (e.id) t += "#" + e.id;
-                    else if (e.className && typeof e.className === "string") {
-                      var cls = e.className.split(/\\s+/).filter(Boolean);
-                      if (cls.length > 0) t += "." + cls[0];
-                    }
-                    return t;
-                  }));
-                })()`,
-                returnByValue: true,
-              }).catch(() => null),
-            ]);
-
-            const describeNode = async (nodeId: number): Promise<string> => {
-              try {
-                const { node: n } = await client.DOM.describeNode({ nodeId });
-                let s = n.localName || n.nodeName.toLowerCase();
-                const attrs = n.attributes || [];
-                for (let i = 0; i < attrs.length; i += 2) {
-                  if (attrs[i] === "id") s += `#${attrs[i + 1]}`;
-                  if (attrs[i] === "class") {
-                    const cls = attrs[i + 1].split(/\s+/).filter(Boolean);
-                    if (cls.length > 0) s += `.${cls[0]}`;
-                  }
-                }
-                return s;
-              } catch { return `node:${nodeId}`; }
-            };
-
-            const topmost = normalHit?.nodeId ? await describeNode(normalHit.nodeId) : "none";
-            const topmostIgnoring = ignoreHit?.nodeId ? await describeNode(ignoreHit.nodeId) : "none";
-            const stack: string[] = stackResult?.result?.value ? JSON.parse(stackResult.result.value as string) : [];
-            const nodeSelector = buildMatchSelector(node).toLowerCase();
-            const elementIndex = stack.findIndex(s => s.toLowerCase() === nodeSelector);
-
-            hitTestResult = {
-              point: center,
-              topmost,
-              topmostIgnoringPointerEvents: topmostIgnoring,
-              stack,
-              elementIndex,
-              blocked: elementIndex > 0,
-            };
-          }
-        } catch {
-          // hit-testing is best-effort
-        }
-
-        let clippingChain: Array<{ selector: string; reasons: string[] }> | null = null;
-        try {
-          const client = connection.client;
-          const escapedSel3 = JSON.stringify(params.selector);
-          const clipResult = await client.Runtime.evaluate({
-            expression: `(function() {
-              var el = document.querySelector(${escapedSel3});
-              if (!el) return null;
-              var clips = [];
-              var p = el.parentElement;
-              while (p && p !== document.documentElement) {
-                var cs = getComputedStyle(p);
-                var reasons = [];
-                if (cs.overflowX !== "visible" || cs.overflowY !== "visible") {
-                  reasons.push("overflow: " + cs.overflowX + "/" + cs.overflowY);
-                }
-                if (cs.clipPath && cs.clipPath !== "none") {
-                  reasons.push("clip-path: " + cs.clipPath);
-                }
-                if (cs.contain) {
-                  var cnt = cs.contain;
-                  if (cnt === "paint" || cnt === "strict" || cnt === "content" || cnt.includes("paint")) {
-                    reasons.push("contain: " + cnt);
-                  }
-                }
-                if (reasons.length > 0) {
-                  var t = p.tagName.toLowerCase();
-                  if (p.id) t += "#" + p.id;
-                  else if (p.className && typeof p.className === "string") {
-                    var c = p.className.split(/\\s+/).filter(Boolean);
-                    if (c.length > 0) t += "." + c[0];
-                  }
-                  clips.push({ selector: t, reasons: reasons });
-                }
-                p = p.parentElement;
-              }
-              return clips.length > 0 ? JSON.stringify(clips) : null;
-            })()`,
-            returnByValue: true,
-          });
-          if (clipResult.result.value) {
-            clippingChain = JSON.parse(clipResult.result.value as string);
-          }
-        } catch {
-          // clipping chain is best-effort
-        }
-
-        let platformFonts: Array<{ familyName: string; postScriptName: string; glyphCount: number }> = [];
-        try {
-          const client = connection.client;
-          const fontsResult = await (client.CSS as any).getPlatformFontsForNode({ nodeId: node.nodeId });
-          if (fontsResult.fonts && fontsResult.fonts.length > 0) {
-            platformFonts = fontsResult.fonts.map((f: any) => ({
-              familyName: f.familyName,
-              postScriptName: f.postScriptName || "",
-              glyphCount: f.glyphCount,
-            }));
-          }
-        } catch {
-          // getPlatformFontsForNode may not be available
-        }
-
-        let interactionState: { interactive: boolean; reasons: string[] } | null = null;
-        try {
-          const client = connection.client;
-          const escapedSel4 = JSON.stringify(params.selector);
-          const intResult = await client.Runtime.evaluate({
-            expression: `(function() {
-              var el = document.querySelector(${escapedSel4});
-              if (!el) return null;
-              var reasons = [];
-              var cs = getComputedStyle(el);
-              if (cs.pointerEvents === "none") reasons.push("pointer-events: none");
-              if (cs.visibility === "hidden") reasons.push("visibility: hidden");
-              if (cs.opacity === "0") reasons.push("opacity: 0");
-              if (el.inert) reasons.push("inert");
-              if (el.disabled) reasons.push("disabled");
-              if (el.getAttribute("aria-disabled") === "true") reasons.push("aria-disabled");
-              if (el.getAttribute("aria-hidden") === "true") reasons.push("aria-hidden");
-              if (cs.display === "none") reasons.push("display: none");
-              var p = el.parentElement;
-              while (p) {
-                if (p.inert) { reasons.push("ancestor inert: " + (p.tagName.toLowerCase())); break; }
-                p = p.parentElement;
-              }
-              return JSON.stringify({ interactive: reasons.length === 0, reasons: reasons });
-            })()`,
-            returnByValue: true,
-          });
-          if (intResult.result.value) {
-            interactionState = JSON.parse(intResult.result.value as string);
-          }
-        } catch {
-          // interaction state is best-effort
-        }
-
-        let focusInfo: { isFocused: boolean; tabIndex: number | null; focusable: boolean; inertAncestor: string | null } | null = null;
-        try {
-          const client = connection.client;
-          const escapedSel5 = JSON.stringify(params.selector);
-          const focusResult = await client.Runtime.evaluate({
-            expression: `(function() {
-              var el = document.querySelector(${escapedSel5});
-              if (!el) return null;
-              var isFocused = document.activeElement === el;
-              var tabIdx = el.getAttribute("tabindex");
-              var focusable = el.tabIndex >= 0;
-              var inertAnc = null;
-              var p = el;
-              while (p) {
-                if (p.inert) {
-                  var t = p.tagName.toLowerCase();
-                  if (p.id) t += "#" + p.id;
-                  inertAnc = t;
-                  break;
-                }
-                p = p.parentElement;
-              }
-              return JSON.stringify({
-                isFocused: isFocused,
-                tabIndex: tabIdx !== null ? parseInt(tabIdx, 10) : null,
-                focusable: focusable,
-                inertAncestor: inertAnc
-              });
-            })()`,
-            returnByValue: true,
-          });
-          if (focusResult.result.value) {
-            focusInfo = JSON.parse(focusResult.result.value as string);
-          }
-        } catch {
-          // focus info is best-effort
-        }
-
-        let scrollOwnership: Array<{ selector: string; overflow: string; scrollable: string }> | null = null;
-        try {
-          const client = connection.client;
-          const escapedSel6 = JSON.stringify(params.selector);
-          const scrollResult = await client.Runtime.evaluate({
-            expression: `(function() {
-              var el = document.querySelector(${escapedSel6});
-              if (!el) return null;
-              var chain = [];
-              var p = el.parentElement;
-              while (p && p !== document.documentElement) {
-                var cs = getComputedStyle(p);
-                var ox = cs.overflowX, oy = cs.overflowY;
-                if (ox !== "visible" || oy !== "visible") {
-                  var t = p.tagName.toLowerCase();
-                  if (p.id) t += "#" + p.id;
-                  else if (p.className && typeof p.className === "string") {
-                    var c = p.className.split(/\\s+/).filter(Boolean);
-                    if (c.length > 0) t += "." + c[0];
-                  }
-                  var dirs = [];
-                  if (p.scrollWidth > p.clientWidth) dirs.push("horizontal");
-                  if (p.scrollHeight > p.clientHeight) dirs.push("vertical");
-                  chain.push({
-                    selector: t,
-                    overflow: ox + "/" + oy,
-                    scrollable: dirs.length > 0 ? dirs.join("+") : "no overflow"
-                  });
-                }
-                p = p.parentElement;
-              }
-              return chain.length > 0 ? JSON.stringify(chain) : null;
-            })()`,
-            returnByValue: true,
-          });
-          if (scrollResult.result.value) {
-            scrollOwnership = JSON.parse(scrollResult.result.value as string);
-          }
-        } catch {
-          // scroll ownership is best-effort
-        }
-
-        let gridFlexGeometry: any = null;
-        try {
-          const client = connection.client;
-          const escapedSel7 = JSON.stringify(params.selector);
-          const gfResult = await client.Runtime.evaluate({
-            expression: `(function() {
-              var el = document.querySelector(${escapedSel7});
-              if (!el) return null;
-              var cs = getComputedStyle(el);
-              var d = cs.display;
-              if (d === "grid" || d === "inline-grid") {
-                var cols = cs.gridTemplateColumns;
-                var rows = cs.gridTemplateRows;
-                var items = [];
-                for (var i = 0; i < el.children.length && i < 20; i++) {
-                  var child = el.children[i];
-                  var ccs = getComputedStyle(child);
-                  var t = child.tagName.toLowerCase();
-                  if (child.className && typeof child.className === "string") {
-                    var c = child.className.split(/\\s+/).filter(Boolean);
-                    if (c.length > 0) t += "." + c[0];
-                  }
-                  items.push({
-                    selector: t,
-                    gridColumn: ccs.gridColumnStart + " / " + ccs.gridColumnEnd,
-                    gridRow: ccs.gridRowStart + " / " + ccs.gridRowEnd
-                  });
-                }
-                return JSON.stringify({ type: "grid", columns: cols, rows: rows, gap: cs.gap, items: items });
-              }
-              if (d === "flex" || d === "inline-flex") {
-                var items = [];
-                for (var i = 0; i < el.children.length && i < 20; i++) {
-                  var child = el.children[i];
-                  var ccs = getComputedStyle(child);
-                  var rect = child.getBoundingClientRect();
-                  var t = child.tagName.toLowerCase();
-                  if (child.className && typeof child.className === "string") {
-                    var c = child.className.split(/\\s+/).filter(Boolean);
-                    if (c.length > 0) t += "." + c[0];
-                  }
-                  items.push({
-                    selector: t,
-                    flexGrow: ccs.flexGrow, flexShrink: ccs.flexShrink, flexBasis: ccs.flexBasis,
-                    width: Math.round(rect.width), height: Math.round(rect.height)
-                  });
-                }
-                return JSON.stringify({
-                  type: "flex", direction: cs.flexDirection, wrap: cs.flexWrap,
-                  justify: cs.justifyContent, align: cs.alignItems, gap: cs.gap,
-                  items: items
-                });
-              }
-              return null;
-            })()`,
-            returnByValue: true,
-          });
-          if (gfResult.result.value) {
-            gridFlexGeometry = JSON.parse(gfResult.result.value as string);
-          }
-        } catch {
-          // grid/flex geometry is best-effort
-        }
-
-        let transformChain: Array<{ selector: string; transform: string; origin: string }> | null = null;
-        try {
-          const client = connection.client;
-          const escapedSel8 = JSON.stringify(params.selector);
-          const txResult = await client.Runtime.evaluate({
-            expression: `(function() {
-              var el = document.querySelector(${escapedSel8});
-              if (!el) return null;
-              var chain = [];
-              var cur = el;
-              while (cur && cur !== document.documentElement) {
-                var cs = getComputedStyle(cur);
-                if (cs.transform && cs.transform !== "none") {
-                  var t = cur.tagName.toLowerCase();
-                  if (cur.id) t += "#" + cur.id;
-                  else if (cur.className && typeof cur.className === "string") {
-                    var c = cur.className.split(/\\s+/).filter(Boolean);
-                    if (c.length > 0) t += "." + c[0];
-                  }
-                  chain.push({ selector: t, transform: cs.transform, origin: cs.transformOrigin });
-                }
-                cur = cur.parentElement;
-              }
-              return chain.length > 0 ? JSON.stringify(chain) : null;
-            })()`,
-            returnByValue: true,
-          });
-          if (txResult.result.value) {
-            transformChain = JSON.parse(txResult.result.value as string);
-          }
-        } catch {
-          // transform chain is best-effort
-        }
-
-        let contentQuads: Array<{ x: number; y: number; width: number; height: number }> | null = null;
-        try {
-          const client = connection.client;
-          const quadsResult = await (client.DOM as any).getContentQuads({ nodeId: node.nodeId });
-          if (quadsResult.quads && quadsResult.quads.length > 1) {
-            contentQuads = quadsResult.quads.map((q: number[]) => {
-              const xs = [q[0], q[2], q[4], q[6]];
-              const ys = [q[1], q[3], q[5], q[7]];
-              return {
-                x: Math.round(Math.min(...xs)),
-                y: Math.round(Math.min(...ys)),
-                width: Math.round(Math.max(...xs) - Math.min(...xs)),
-                height: Math.round(Math.max(...ys) - Math.min(...ys)),
-              };
-            });
-          }
-        } catch {
-          // getContentQuads may not be available
-        }
+        const [
+          eventListeners,
+          reactComponent,
+          cssVariables,
+          blendedBg,
+          containingBlock,
+          hitTestResult,
+          clippingChain,
+          platformFonts,
+          interactionState,
+          focusInfo,
+          scrollOwnership,
+          gridFlexGeometry,
+          transformChain,
+          contentQuads,
+        ] = await Promise.all([
+          getEventListeners(client, node.nodeId),
+          getReactComponent(client, sel),
+          getCssVariables(client, node.nodeId),
+          getBlendedBackground(client, node.nodeId),
+          getContainingBlock(client, sel).catch(() => null),
+          getHitTest(client, sel, matchLabel).catch(() => null),
+          getClippingChain(client, sel).catch(() => null),
+          getPlatformFonts(client, node.nodeId).catch(() => []),
+          getInteractionState(client, sel).catch(() => null),
+          getFocusInfo(client, sel).catch(() => null),
+          getScrollOwnership(client, sel).catch(() => null),
+          getFlexGridGeometry(client, sel).catch(() => null),
+          getTransformChain(client, sel).catch(() => null),
+          getContentQuads(client, node.nodeId),
+        ]);
 
         let text = formatElement(node, tree);
 
@@ -607,9 +137,9 @@ export function registerInspectElement(server: McpServer): void {
           text += `\n\nCONTAINING BLOCK:\n  ${containingBlock.selector} (${containingBlock.reason})`;
         }
 
-        if (blendedBackgroundColor) {
+        if (blendedBg) {
           const bgComp = node.computed.backgroundColor ?? "transparent";
-          text += `\n\nBACKGROUND:\n  declared: ${bgComp}\n  blended (visible): ${blendedBackgroundColor}`;
+          text += `\n\nBACKGROUND:\n  declared: ${bgComp}\n  blended (visible): ${blendedBg}`;
         }
 
         if (eventListeners.length > 0) {
@@ -737,4 +267,107 @@ export function registerInspectElement(server: McpServer): void {
       }
     },
   );
+}
+
+async function getEventListeners(client: CDP.Client, nodeId: number): Promise<string[]> {
+  try {
+    const resolved = await client.DOM.resolveNode({ nodeId });
+    if (!resolved.object.objectId) return [];
+    const listeners = await client.DOMDebugger.getEventListeners({
+      objectId: resolved.object.objectId,
+    });
+    return listeners.listeners.map(
+      (l) => `${l.type}${l.once ? " (once)" : ""}${l.passive ? " (passive)" : ""}`,
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function getReactComponent(
+  client: CDP.Client,
+  cssSelector: string,
+): Promise<{ name: string; hierarchy: string[] } | null> {
+  try {
+    const escapedSelector = JSON.stringify(cssSelector);
+    const reactResult = await client.Runtime.evaluate({
+      expression: `(function() {
+        var el = document.querySelector(${escapedSelector});
+        if (!el) return null;
+        var key = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'); });
+        if (!key) return null;
+        var fiber = el[key];
+        var components = [];
+        var f = fiber;
+        while (f) {
+          if (f.type && typeof f.type === 'function') {
+            components.push(f.type.displayName || f.type.name || '(anonymous)');
+          }
+          f = f.return;
+          if (components.length > 5) break;
+        }
+        return components.length > 0 ? JSON.stringify({ name: components[0], hierarchy: components.reverse() }) : null;
+      })()`,
+      returnByValue: true,
+    });
+    if (reactResult.result.value) {
+      return JSON.parse(reactResult.result.value as string);
+    }
+  } catch {
+    // not React
+  }
+  return null;
+}
+
+async function getCssVariables(
+  client: CDP.Client,
+  nodeId: number,
+): Promise<Array<{ name: string; value: string }>> {
+  try {
+    const { computedStyle } = await client.CSS.getComputedStyleForNode({ nodeId });
+    return computedStyle
+      .filter(p => p.name.startsWith("--"))
+      .map(p => ({ name: p.name, value: p.value }));
+  } catch {
+    return [];
+  }
+}
+
+async function getBlendedBackground(
+  client: CDP.Client,
+  nodeId: number,
+): Promise<string | undefined> {
+  try {
+    const bgResult = await (client.CSS as any).getBackgroundColors({ nodeId });
+    if (bgResult.backgroundColors && bgResult.backgroundColors.length > 0) {
+      return bgResult.backgroundColors[0];
+    }
+  } catch {
+    // not available
+  }
+  return undefined;
+}
+
+async function getContentQuads(
+  client: CDP.Client,
+  nodeId: number,
+): Promise<Array<{ x: number; y: number; width: number; height: number }> | null> {
+  try {
+    const quadsResult = await (client.DOM as any).getContentQuads({ nodeId });
+    if (quadsResult.quads && quadsResult.quads.length > 1) {
+      return quadsResult.quads.map((q: number[]) => {
+        const xs = [q[0], q[2], q[4], q[6]];
+        const ys = [q[1], q[3], q[5], q[7]];
+        return {
+          x: Math.round(Math.min(...xs)),
+          y: Math.round(Math.min(...ys)),
+          width: Math.round(Math.max(...xs) - Math.min(...xs)),
+          height: Math.round(Math.max(...ys) - Math.min(...ys)),
+        };
+      });
+    }
+  } catch {
+    // not available
+  }
+  return null;
 }

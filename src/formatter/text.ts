@@ -1,5 +1,4 @@
 import type {
-  CSSRuleSource,
   LayoutNode,
   LayoutTree,
 } from "../types.js";
@@ -63,17 +62,6 @@ function describeNodeWithHints(node: LayoutNode): string {
   }
 
   return label;
-}
-
-function fmtSource(rule: CSSRuleSource): string {
-  if (!rule.sourceFile) return "";
-  const filename = rule.sourceFile.split("/").pop() ?? rule.sourceFile;
-  if (rule.sourceLine !== undefined) return `${filename}:${rule.sourceLine}`;
-  return filename;
-}
-
-function fmtSpecificity(spec: [number, number, number]): string {
-  return `${spec[0]}-${spec[1]}-${spec[2]}`;
 }
 
 // ─── Tree rendering ──────────────────────────────────────────
@@ -303,50 +291,6 @@ export function formatElement(
   return out.join("\n");
 }
 
-export function formatPropertyTrace(
-  node: LayoutNode,
-  property: string,
-  rules: CSSRuleSource[],
-): string {
-  const out: string[] = [];
-
-  out.push(`CSS CASCADE: ${property}`);
-  out.push(`element: ${formatSelector(node)}`);
-  out.push("");
-
-  if (rules.length === 0) {
-    out.push("No CSS rules found for this property.");
-    out.push(`Computed value: ${getComputedProp(node, property)}`);
-    return out.join("\n");
-  }
-
-  for (let i = 0; i < rules.length; i++) {
-    const rule = rules[i];
-    const label = i === 0 ? "WINNING" : rule.isUserAgent ? "USER-AGENT" : rule.isInherited ? "INHERITED" : "OVERRIDDEN";
-    const src = fmtSource(rule);
-    const spec = fmtSpecificity(rule.specificity);
-    const important = rule.value.includes("!important") ? " !important" : "";
-
-    let line = `  ${label}: ${rule.selector} { ${property}: ${rule.value.replace(/\s*!important\s*/, "")}${important} }`;
-
-    if (!rule.isUserAgent) {
-      const meta: string[] = [];
-      if (src) meta.push(src);
-      meta.push(`specificity: ${spec}`);
-      if (rule.isInherited) meta.push("inherited");
-      if (rule.mediaQuery) meta.push(`@media ${rule.mediaQuery}`);
-      if (rule.containerQuery) meta.push(`@container ${rule.containerQuery}`);
-      if (meta.length > 0) line += `  (${meta.join(", ")})`;
-    }
-
-    out.push(line);
-  }
-
-  out.push("");
-  out.push(`Computed value: ${getComputedProp(node, property)}`);
-
-  return out.join("\n");
-}
 
 export function formatComparison(a: LayoutNode, b: LayoutNode): string {
   const out: string[] = [];
@@ -502,8 +446,3 @@ function diffLine(out: string[], label: string, a: number, b: number): void {
   }
 }
 
-function getComputedProp(node: LayoutNode, cssProp: string): string {
-  const camelCase = cssProp.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
-  const computed = node.computed as unknown as Record<string, string | undefined>;
-  return computed[camelCase] ?? "(not set)";
-}

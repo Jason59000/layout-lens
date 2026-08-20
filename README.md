@@ -213,6 +213,60 @@ STICKY CONSTRAINTS (from Blink):
   layer 7: sticky box 0,0 1280x64 in block 0,0 1280x4200
 ```
 
+### Console output
+
+```
+capture_console 5000
+
+CONSOLE CAPTURE: 5.0s
+entries: 12, exceptions: 1
+
+EXCEPTIONS: 1
+  TypeError: Cannot read properties of undefined (reading 'map') (ProductList.tsx:42)
+
+BY TYPE:
+  warn: 7
+  error: 3
+  log: 2
+
+ENTRIES:
+  [error] Failed to fetch /api/products: 500 Internal Server Error (api.ts:15)
+  [warn] Each child in a list should have a unique "key" prop. (react-dom.development.js:86)
+  [log] [HMR] connected (client.ts:24)
+  ...
+```
+
+### Network requests
+
+```
+capture_network 5000
+
+NETWORK CAPTURE: 5.0s
+total requests: 18
+
+FAILED REQUESTS: 1
+  GET /api/products
+    error: net::ERR_CONNECTION_REFUSED
+    type: Fetch
+
+ERROR RESPONSES: 1
+  POST /api/auth/refresh → 401 Unauthorized
+    type: Fetch
+
+BY TYPE:
+  Fetch: 4
+  Script: 6
+  Stylesheet: 3
+  Image: 5
+
+TOTAL TRANSFER: 847.2 KB
+
+SLOWEST REQUESTS:
+  1240ms GET /api/products → FAILED
+  380ms GET /static/js/main.chunk.js → 200
+  120ms GET /static/css/app.css → 200
+```
+
 ## Quick Start
 
 Add to your MCP config:
@@ -234,7 +288,7 @@ Start Chrome with remote debugging:
 chrome --remote-debugging-port=9222
 ```
 
-That's it. Your agent now has 17 tools to look at the rendered page.
+That's it. Your agent now has 19 tools to look at the rendered page.
 
 ## 17 Tools
 
@@ -275,6 +329,13 @@ That's it. Your agent now has 17 tools to look at the rendered page.
 | `inspect_accessibility` | Full AX tree — roles, names, states, focusable count, missing name warnings |
 | `get_performance_metrics` | JS heap, DOM nodes, layout/style/script duration, navigation timing |
 
+### Runtime (console & network)
+
+| Tool | Data |
+|------|------|
+| `capture_console` | Console logs/warns/errors + uncaught exceptions over a time period |
+| `capture_network` | HTTP requests, failures, CORS errors, response timing, transfer size |
+
 ## Per element
 
 Geometry, 40+ computed styles, box model (margin/border/padding/content), text content, pseudo-elements (::before/::after), accessibility (role, aria-label, aria-hidden, tabindex), stacking context, scroll state, natural image dimensions, shadow DOM boundaries, containing block.
@@ -314,6 +375,9 @@ Layout Lens goes deep into the Chrome DevTools Protocol to extract data that mos
 | `LayerTree` domain | `profile_rendering` | Compositing layers, scroll reasons, sticky constraints |
 | `Accessibility.getFullAXTree` | `inspect_accessibility` | Complete accessibility tree from Blink |
 | `Performance.getMetrics` | `get_performance_metrics` | Runtime perf metrics (heap, layout, script duration) |
+| `Runtime.consoleAPICalled` | `capture_console` | Console log/warn/error/info entries |
+| `Runtime.exceptionThrown` | `capture_console` | Uncaught JS exceptions with stack traces |
+| `Network` domain | `capture_network` | HTTP requests, responses, failures, CORS blocks, timing |
 
 ## Requirements
 

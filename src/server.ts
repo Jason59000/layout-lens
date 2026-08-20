@@ -18,6 +18,8 @@ import { registerTestResponsive } from "./tools/test-responsive.js";
 import { registerInspectAccessibility } from "./tools/inspect-accessibility.js";
 import { registerGetPerformanceMetrics } from "./tools/get-performance-metrics.js";
 import { registerWatchStyles } from "./tools/watch-styles.js";
+import { registerCaptureConsole } from "./tools/capture-console.js";
+import { registerCaptureNetwork } from "./tools/capture-network.js";
 
 const server = new McpServer({
   name: "layout-lens",
@@ -41,6 +43,8 @@ registerTestResponsive(server);
 registerInspectAccessibility(server);
 registerGetPerformanceMetrics(server);
 registerWatchStyles(server);
+registerCaptureConsole(server);
+registerCaptureNetwork(server);
 
 async function main() {
   const transport = new StdioServerTransport();
