@@ -2,7 +2,7 @@
 
 Gives AI agents eyes on the rendered page.
 
-> Your agent can read CSS. It can't see what it renders. Layout Lens connects it to Chrome and gives it the computed layout data — box models, cascades, scroll state, geometry — so together you can debug what source code alone can't explain.
+> Your agent can read CSS. It can't see what it renders. Layout Lens connects it to Chrome and gives it the computed layout data — box models, cascades, scroll state, geometry, accessibility, performance — so together you can debug what source code alone can't explain.
 
 ## Why
 
@@ -46,7 +46,7 @@ html (1280x720)
 
 Not the DOM. The rendered layout with computed sizes, display modes, and positioning.
 
-### Any element in detail — box model, parent, CSS rules
+### Deep element inspection — box model, CSS rules, hit-test, fonts, transforms
 
 ```
 inspect_element "#data-table"
@@ -63,9 +63,29 @@ PARENT RELATIONSHIP:
   parent: section.table-wrapper (1280 x 620)
   element exceeds parent width by 656px
   parent overflow-x: hidden -> content CLIPPED
-```
 
-The agent now sees the overflow. It knows the parent is 1280px, the table is 1904px, and the content is clipped. It can trace why and suggest a fix.
+CONTAINING BLOCK: section.table-wrapper (position: relative)
+BACKGROUND: rgba(255,255,255,1) (blended from ancestors)
+
+HIT-TEST:
+  receives click: yes (topmost at center)
+  ignoring pointer-events: div.overlay (pointer-events: none)
+
+CLIPPING CHAIN:
+  section.table-wrapper (overflow: hidden)
+
+FONTS:
+  "Inter" (400 glyphs) — actual rendered font
+  "Arial" (2 glyphs) — fallback for missing glyphs
+
+GRID/FLEX GEOMETRY:
+  parent: flex-row, gap: 16px
+  this item: grow=0, shrink=1, basis=auto
+
+CSS VARIABLES:
+  --spacing: 16px (from :root)
+  --table-bg: white (from .data-table)
+```
 
 ### The CSS cascade — which rule wins and why
 
@@ -79,7 +99,10 @@ element: table.data-table
   OVERRIDDEN: table { min-width: 100% }  (reset.css:12, specificity: 0-0-1)
 
 Computed value: 1904px
+Resolved value: 1904px
 ```
+
+`trace_property` uses `CSS.resolveValues` to resolve `calc()`, `em`, `%`, and `var()` expressions in the element's context.
 
 ### Every viewport at once
 
@@ -108,7 +131,87 @@ HOT ELEMENTS (>10 mutations):
 TOTAL: 240 DOM mutations in 5.0s (48/sec average)
 ```
 
-You interact with the page. Layout Lens records what moves. The agent reads it.
+### Computed style changes
+
+```
+watch_styles ["width", "height", "transform"]
+
+COMPUTED STYLE WATCH: 3.0s
+properties: width, height, transform
+total updates: 47
+
+ELEMENTS WITH CHANGES: 3
+  div.sidebar: 28 change(s)
+  div.content: 15 change(s)
+  span.indicator: 4 change(s)
+
+TIMING: changes spread over 2800ms
+  rate: ~17 updates/sec
+```
+
+Uses `CSS.trackComputedStyleUpdates` — tracks real computed style changes (transitions, animations, media queries), not just DOM mutations.
+
+### Full accessibility tree
+
+```
+inspect_accessibility
+
+ACCESSIBILITY TREE: 142 nodes
+
+document "My App"
+├── banner
+│   ├── link "Home" (focusable)
+│   ├── navigation "Main menu"
+│   │   ├── link "Products" (focusable)
+│   │   └── link "About" (focusable)
+│   └── search (focusable)
+├── main
+│   ├── heading "Welcome" (level=1)
+│   └── ...
+
+SUMMARY: 23 focusable, 1 currently focused
+WARNING: 2 interactive elements missing accessible name
+```
+
+### Performance metrics
+
+```
+get_performance_metrics
+
+PERFORMANCE METRICS
+  JS heap: 12.4 MB (limit: 4096 MB)
+  DOM nodes: 847
+  documents: 1
+  event listeners: 234
+  layout count: 12 (duration: 3.2ms)
+  style recalc: 8 (duration: 1.1ms)
+
+NAVIGATION TIMING
+  first byte: 120ms
+  DOM interactive: 450ms
+  DOM content loaded: 520ms
+  page load: 1240ms
+```
+
+### Rendering profile with compositing layers
+
+```
+profile_rendering
+
+RENDERING PROFILE: 3.0s capture
+FPS: avg 59fps (target: 60fps)
+JANK FRAMES: 2/180 (1.1%)
+
+COMPOSITING LAYERS: 14
+  drawing content: 8
+  total paint count: 42
+
+MAIN-THREAD SCROLL REASONS:
+  layer 3 (1280x4200): RepaintsOnScroll [56 paints]
+
+STICKY CONSTRAINTS (from Blink):
+  layer 7: sticky box 0,0 1280x64 in block 0,0 1280x4200
+```
 
 ## Quick Start
 
@@ -131,25 +234,25 @@ Start Chrome with remote debugging:
 chrome --remote-debugging-port=9222
 ```
 
-That's it. Your agent now has 14 tools to look at the rendered page.
+That's it. Your agent now has 17 tools to look at the rendered page.
 
-## 14 Tools
+## 17 Tools
 
 ### Page snapshot (~150ms)
 
 | Tool | Data |
 |------|------|
-| `inspect_layout` | Full layout tree — dimensions, display mode, position, framework, Tailwind |
+| `inspect_layout` | Full layout tree — dimensions, display mode, position, framework, Tailwind, containing blocks |
 | `get_scroll_tree` | Scroll containers + sticky elements + scroll offsets |
-| `query_layout` | Run custom JS queries against the layout tree |
-| `capture_page` | Annotated screenshot |
+| `query_layout` | Run custom JS queries + `findByStyle()` native style search |
+| `capture_page` | Annotated screenshot + responsive + colorScheme |
 
 ### Element deep-dive
 
 | Tool | Data |
 |------|------|
-| `inspect_element` | Box model, CSS rules (file:line), event listeners, React component |
-| `trace_property` | Full CSS cascade with specificity for one property |
+| `inspect_element` | Box model, CSS rules (file:line), event listeners, React component, hit-test, clipping chain, fonts, grid/flex geometry, transforms, inline fragments, interaction state, focus, scroll ownership, containing block, blended background, CSS variables |
+| `trace_property` | Full CSS cascade with specificity + `CSS.resolveValues` for calc/em/%/var |
 | `compare_elements` | Geometric diff between two elements |
 
 ### Monitoring
@@ -157,16 +260,24 @@ That's it. Your agent now has 14 tools to look at the rendered page.
 | Tool | Data |
 |------|------|
 | `watch_dom_mutations` | DOM changes over a fixed duration |
-| `profile_rendering` | FPS, jank frames, frame timing |
+| `watch_styles` | Computed style changes via `CSS.trackComputedStyleUpdates` |
+| `profile_rendering` | FPS, jank, compositing layers (LayerTree), scroll reasons, sticky constraints, paint order |
 | `detect_layout_shifts` | CLS score + which elements shifted |
 | `check_animations` | Animation state — running, stuck, hidden |
 | `compare_color_schemes` | Light vs dark mode element-by-element diff |
 | `check_interactive_states` | Hover/focus feedback check (WCAG 2.4.7) |
 | `test_responsive` | 6-viewport sweep — what overflows, what disappears |
 
+### Accessibility & Performance
+
+| Tool | Data |
+|------|------|
+| `inspect_accessibility` | Full AX tree — roles, names, states, focusable count, missing name warnings |
+| `get_performance_metrics` | JS heap, DOM nodes, layout/style/script duration, navigation timing |
+
 ## Per element
 
-Geometry, 35+ computed styles, box model (margin/border/padding/content), text content, pseudo-elements (::before/::after), accessibility (role, aria-label, aria-hidden, tabindex), stacking context, scroll state, natural image dimensions, shadow DOM boundaries.
+Geometry, 40+ computed styles, box model (margin/border/padding/content), text content, pseudo-elements (::before/::after), accessibility (role, aria-label, aria-hidden, tabindex), stacking context, scroll state, natural image dimensions, shadow DOM boundaries, containing block.
 
 ## Enrichments
 
@@ -174,6 +285,35 @@ Geometry, 35+ computed styles, box model (margin/border/padding/content), text c
 - **React component mapping** — `<div class="css-1a2b3c">` becomes `<ProductCard>` with component hierarchy
 - **Tailwind CSS** — detected and noted in layout overview
 - **Shadow DOM** — pierced in extraction
+- **Containing block** — which ancestor constrains absolute/fixed/sticky elements
+- **Blended background** — actual rendered color after ancestor compositing
+- **Hit-testing** — native CDP hit-test with `ignorePointerEventsNone`
+- **Clipping chain** — every overflow/clip-path/contain ancestor between element and viewport
+- **Actual fonts** — which font file the browser used, glyph counts per face
+- **Inline fragments** — multi-quads for wrapped/ellipsed inline text
+- **Resolved values** — resolve `calc()`, `em`, `%`, `var()` in element context
+- **Native style search** — Blink-side filtering by computed style value
+- **Compositing layers** — layers, paint counts, scroll reasons, sticky constraints
+- **Paint order** — paint order of all rendered elements
+- **Style tracking** — real-time computed style change monitoring
+
+## CDP Features Used
+
+Layout Lens goes deep into the Chrome DevTools Protocol to extract data that most tools ignore:
+
+| CDP API | Used in | What it gives |
+|---------|---------|---------------|
+| `DOM.getNodeForLocation` | `inspect_element` | Native hit-testing with `ignorePointerEventsNone` flag |
+| `CSS.getBackgroundColors` | `inspect_element` | Blended background after ancestor compositing |
+| `CSS.getPlatformFontsForNode` | `inspect_element` | Actual rendered font family + glyph count per face |
+| `CSS.resolveValues` | `trace_property` | Resolve calc/em/%/var in element context |
+| `CSS.trackComputedStyleUpdates` | `watch_styles` | Track real computed style changes over time |
+| `DOM.getNodesForSubtreeByStyle` | `query_layout` | Native Blink-side style search |
+| `DOM.getContentQuads` | `inspect_element` | Multi-quads for inline elements that wrap across lines |
+| `DOMSnapshot.captureSnapshot` | `profile_rendering` | Paint order of all elements |
+| `LayerTree` domain | `profile_rendering` | Compositing layers, scroll reasons, sticky constraints |
+| `Accessibility.getFullAXTree` | `inspect_accessibility` | Complete accessibility tree from Blink |
+| `Performance.getMetrics` | `get_performance_metrics` | Runtime perf metrics (heap, layout, script duration) |
 
 ## Requirements
 
