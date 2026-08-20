@@ -61,6 +61,27 @@ interface BatchResult {
   root: BatchNode;
 }
 
+const FRAMEWORK_DETECT_JS = `(function() {
+  var fw = { name: null, version: null, meta: null };
+  if (window.__REACT_DEVTOOLS_GLOBAL_HOOK__ || document.querySelector('[data-reactroot]') || document.querySelector('[data-react-helmet]')) {
+    fw.name = 'React';
+    try { fw.version = window.__REACT_DEVTOOLS_GLOBAL_HOOK__?.renderers?.values()?.next()?.value?.version || null; } catch(e) {}
+  }
+  if (window.__VUE__ || window.__vue_app__) {
+    fw.name = 'Vue';
+    try { fw.version = window.__VUE__?.version || null; } catch(e) {}
+  }
+  if (window.ng || document.querySelector('[ng-version]')) {
+    fw.name = 'Angular';
+    var el = document.querySelector('[ng-version]');
+    if (el) fw.version = el.getAttribute('ng-version');
+  }
+  if (document.querySelector('[class*="svelte-"]')) fw.name = 'Svelte';
+  if (window.__NEXT_DATA__) fw.meta = 'Next.js';
+  if (window.__NUXT__) fw.meta = 'Nuxt';
+  return fw.name ? fw : null;
+})()`;
+
 // Pure JavaScript string that runs inside the browser via Runtime.evaluate.
 // No TypeScript annotations — this is sent as-is to Chrome.
 const BATCH_EXTRACT_JS = `(function() {
@@ -416,11 +437,18 @@ export class LayoutExtractor {
     const client = this.connection.client;
     const timestamp = Date.now();
 
-    const result = await client.Runtime.evaluate({
-      expression: BATCH_EXTRACT_JS,
-      returnByValue: true,
-      timeout: 30000,
-    });
+    const [result, fwResult] = await Promise.all([
+      client.Runtime.evaluate({
+        expression: BATCH_EXTRACT_JS,
+        returnByValue: true,
+        timeout: 30000,
+      }),
+      client.Runtime.evaluate({
+        expression: FRAMEWORK_DETECT_JS,
+        returnByValue: true,
+        timeout: 5000,
+      }),
+    ]);
 
     if (result.exceptionDetails) {
       throw new Error(
@@ -435,11 +463,22 @@ export class LayoutExtractor {
       throw new Error("Failed to extract layout tree: root element produced no layout");
     }
 
-    return {
+    const tree: LayoutTree = {
       viewport: raw.viewport,
       root,
       timestamp,
     };
+
+    const fwRaw = fwResult.exceptionDetails ? null : fwResult.result.value as { name: string; version?: string | null; meta?: string | null } | null;
+    if (fwRaw) {
+      tree.framework = {
+        name: fwRaw.name,
+        ...(fwRaw.version ? { version: fwRaw.version } : {}),
+        ...(fwRaw.meta ? { meta: fwRaw.meta } : {}),
+      };
+    }
+
+    return tree;
   }
 
   private convertBatchNode(

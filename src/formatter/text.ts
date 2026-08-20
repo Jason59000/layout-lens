@@ -7,9 +7,11 @@ import type {
 import {
   formatSelector,
   walkTree,
+  flattenTree,
   findParent,
   getElementPath,
 } from "../detectors/types.js";
+import { detectTailwind, suggestTailwindFix } from "../diagnostics/tailwind.js";
 
 // ─── Internal helpers ────────────────────────────────────────
 
@@ -189,6 +191,12 @@ export function formatLayoutOverview(tree: LayoutTree, issues: Issue[]): string 
   // Header
   out.push("PAGE LAYOUT OVERVIEW");
   out.push(`viewport: ${tree.viewport.width}x${tree.viewport.height}`);
+  if (tree.framework) {
+    let fwLine = `framework: ${tree.framework.name}`;
+    if (tree.framework.version) fwLine += ` ${tree.framework.version}`;
+    if (tree.framework.meta) fwLine += ` (${tree.framework.meta})`;
+    out.push(fwLine);
+  }
   out.push("");
 
   // Anomaly summary
@@ -211,6 +219,9 @@ export function formatLayoutOverview(tree: LayoutTree, issues: Issue[]): string 
     out.push(line.prefix + line.text);
   }
 
+  // Tailwind detection for enriched diagnostics
+  const isTailwind = detectTailwind(flattenTree(tree));
+
   // Overflow details section
   const overflowIssues = issues.filter((i) => i.category === "overflow");
   if (overflowIssues.length > 0) {
@@ -224,6 +235,14 @@ export function formatLayoutOverview(tree: LayoutTree, issues: Issue[]): string 
         if (issue.rootCause.source) {
           const src = fmtSource(issue.rootCause.source);
           if (src) out.push(`  → source: ${issue.rootCause.source.selector} (${src})`);
+        }
+        if (isTailwind && issue.rootCause.source) {
+          const tw = suggestTailwindFix(
+            issue.rootCause.source.property,
+            issue.rootCause.source.value,
+            inferSuggestedValue(issue),
+          );
+          if (tw) out.push(`  → tailwind: ${tw}`);
         }
       }
     }
@@ -402,13 +421,15 @@ export function formatElement(
 /**
  * Format a list of issues with full diagnostics.
  */
-export function formatIssues(issues: Issue[]): string {
+export function formatIssues(issues: Issue[], tree?: LayoutTree): string {
   if (issues.length === 0) {
     return "NO ISSUES DETECTED";
   }
 
   const out: string[] = [];
   const categoryCounts = countByCategory(issues);
+
+  const isTailwind = tree ? detectTailwind(flattenTree(tree)) : false;
 
   // Summary header
   out.push(`ISSUES FOUND: ${issues.length} total`);
@@ -427,7 +448,7 @@ export function formatIssues(issues: Issue[]): string {
   for (let i = 0; i < sorted.length; i++) {
     out.push("");
     out.push(`--- Issue ${i + 1}/${sorted.length} ---`);
-    out.push(formatIssue(sorted[i]));
+    out.push(formatIssue(sorted[i], isTailwind));
   }
 
   return out.join("\n");
@@ -436,7 +457,7 @@ export function formatIssues(issues: Issue[]): string {
 /**
  * Format a single issue: WHAT, WHERE, WHY (cause chain), IMPACT.
  */
-export function formatIssue(issue: Issue): string {
+export function formatIssue(issue: Issue, isTailwind = false): string {
   const out: string[] = [];
 
   // WHAT
@@ -477,6 +498,16 @@ export function formatIssue(issue: Issue): string {
       if (src) srcLine += ` (${src})`;
       srcLine += `, specificity: ${spec}`;
       out.push(srcLine);
+    }
+    if (isTailwind && issue.rootCause.source) {
+      const tw = suggestTailwindFix(
+        issue.rootCause.source.property,
+        issue.rootCause.source.value,
+        inferSuggestedValue(issue),
+      );
+      if (tw) {
+        out.push(`  tailwind: ${tw}`);
+      }
     }
   }
 
@@ -689,6 +720,35 @@ export function formatScrollTree(tree: LayoutTree): string {
 }
 
 // ─── Private helpers ─────────────────────────────────────────
+
+/**
+ * Infer a suggested CSS value from an issue's context.
+ * Used to generate Tailwind fix suggestions.
+ */
+function inferSuggestedValue(issue: Issue): string {
+  const prop = issue.rootCause?.source?.property ?? "";
+  const val = issue.rootCause?.source?.value ?? "";
+
+  // Overflow issues: suggest auto or scroll instead of hidden/visible
+  if (prop === "overflow" || prop === "overflow-x" || prop === "overflow-y") {
+    if (val === "hidden") return "auto";
+    if (val === "visible") return "auto";
+  }
+
+  // Flex shrink 0 causing overflow: suggest 1
+  if (prop === "flex-shrink" && val === "0") return "1";
+
+  // White-space nowrap causing overflow: suggest normal
+  if (prop === "white-space" && (val === "nowrap" || val === "pre")) return "normal";
+
+  // Display none: suggest block
+  if (prop === "display" && val === "none") return "block";
+
+  // Visibility hidden: suggest visible
+  if (prop === "visibility" && val === "hidden") return "visible";
+
+  return "";
+}
 
 function diffLine(out: string[], label: string, a: number, b: number): void {
   if (a === b) {

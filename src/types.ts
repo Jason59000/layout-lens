@@ -130,6 +130,7 @@ export interface LayoutTree {
   viewport: { width: number; height: number };
   root: LayoutNode;
   timestamp: number;
+  framework?: { name: string; version?: string; meta?: string };
 }
 
 export type IssueCategory =

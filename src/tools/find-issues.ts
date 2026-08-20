@@ -71,7 +71,7 @@ export function registerFindIssues(server: McpServer): void {
           issues.push(...detector.detect(tree));
         }
 
-        const text = formatIssues(issues);
+        const text = formatIssues(issues, tree);
 
         return {
           content: [{ type: "text", text }],
