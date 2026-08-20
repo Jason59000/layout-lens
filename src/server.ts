@@ -11,13 +11,13 @@ import { registerQueryLayout } from "./tools/query-layout.js";
 import { registerCapturePage } from "./tools/capture-page.js";
 import { registerDetectShifts } from "./tools/detect-shifts.js";
 import { registerCheckAnimations } from "./tools/check-animations.js";
+import { registerCompareColorSchemes } from "./tools/compare-color-schemes.js";
 
 const server = new McpServer({
   name: "layout-lens",
   version: "0.1.0",
 });
 
-// Register all 10 layout analysis tools
 registerInspectLayout(server);
 registerInspectElement(server);
 registerFindIssues(server);
@@ -28,6 +28,7 @@ registerQueryLayout(server);
 registerCapturePage(server);
 registerDetectShifts(server);
 registerCheckAnimations(server);
+registerCompareColorSchemes(server);
 
 async function main() {
   const transport = new StdioServerTransport();
