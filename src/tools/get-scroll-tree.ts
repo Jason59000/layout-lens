@@ -21,7 +21,7 @@ export function registerGetScrollTree(server: McpServer): void {
         });
 
         const extractor = new LayoutExtractor(connection);
-        const tree = await extractor.extractTree();
+        const tree = await extractor.extractTree({ lightweight: true });
 
         const text = formatScrollTree(tree);
 

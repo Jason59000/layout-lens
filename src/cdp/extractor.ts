@@ -15,6 +15,145 @@ import type {
 // DOM nodeType constants
 const ELEMENT_NODE = 1;
 
+// Compact shape returned by the batch extraction JS running in the browser
+interface BatchNode {
+  nid: number;
+  tag: string;
+  id: string;
+  cls: string[];
+  ci: number;   // childIndex (1-based)
+  sc: number;   // siblingCount
+  // Box model: border rect from getBoundingClientRect
+  bx: number; by: number; bw: number; bh: number;
+  // Margins/padding/border from computed
+  mt: number; mr: number; mb: number; ml: number;
+  pt: number; pr: number; pb: number; pl: number;
+  bt: number; br: number; bb: number; bl: number;
+  // Scroll state
+  sw: number; sh: number; cw: number; ch_h: number; sl: number; st: number;
+  // Computed styles (short keys to minimize JSON size)
+  display: string; position: string; float: string; boxSizing: string;
+  overflowX: string; overflowY: string; zIndex: string; opacity: string;
+  visibility: string; transform: string; filter: string; willChange: string;
+  isolation: string; clipPath: string;
+  flexDirection: string; flexWrap: string; flexShrink: string; flexGrow: string;
+  alignItems: string; justifyContent: string; gap: string;
+  gridTemplateCols: string; gridTemplateRows: string; gridGap: string;
+  minWidth: string; maxWidth: string; minHeight: string; maxHeight: string;
+  width: string; height: string;
+  whiteSpace: string; textOverflow: string; objectFit: string;
+  color: string; bgColor: string; fontSize: string; lineHeight: string;
+  stickyTop: string; stickyBottom: string; stickyLeft: string; stickyRight: string;
+  // Natural size (images only)
+  nw?: number; nh?: number;
+  // Direct text content (truncated)
+  txt?: string;
+  // Children
+  ch: BatchNode[];
+}
+
+interface BatchResult {
+  viewport: { width: number; height: number };
+  root: BatchNode;
+}
+
+// Pure JavaScript string that runs inside the browser via Runtime.evaluate.
+// No TypeScript annotations — this is sent as-is to Chrome.
+const BATCH_EXTRACT_JS = `(function() {
+  var SKIP = {SCRIPT:1, STYLE:1, LINK:1, META:1, NOSCRIPT:1};
+  var PROPS = [
+    "display","position","float","box-sizing",
+    "overflow-x","overflow-y","z-index","opacity",
+    "visibility","transform","filter","will-change",
+    "isolation","clip-path",
+    "flex-direction","flex-wrap","flex-shrink","flex-grow",
+    "align-items","justify-content","gap",
+    "grid-template-columns","grid-template-rows","grid-gap",
+    "min-width","max-width","min-height","max-height",
+    "width","height","white-space","text-overflow","object-fit",
+    "color","background-color","font-size","line-height",
+    "margin-top","margin-right","margin-bottom","margin-left",
+    "padding-top","padding-right","padding-bottom","padding-left",
+    "border-top-width","border-right-width","border-bottom-width","border-left-width",
+    "top","bottom","left","right"
+  ];
+  var nid = 1;
+  function px(v) { return parseFloat(v) || 0; }
+  function walk(el, ci, sc) {
+    var tag = el.tagName;
+    if (SKIP[tag]) return null;
+    var cs = getComputedStyle(el);
+    if (cs.display === "none") return null;
+    var v = {};
+    for (var i = 0; i < PROPS.length; i++) v[PROPS[i]] = cs.getPropertyValue(PROPS[i]);
+    var r = el.getBoundingClientRect();
+    var id = el.id || "";
+    var cn = el.className;
+    var cls = (cn && typeof cn === "string") ? cn.split(/\\s+/).filter(Boolean) : [];
+    var ch = [];
+    var kids = el.children;
+    var ec = 0;
+    for (var j = 0; j < kids.length; j++) {
+      if (kids[j].nodeType === 1 && !SKIP[kids[j].tagName]) ec++;
+    }
+    var ei = 0;
+    for (var j = 0; j < kids.length; j++) {
+      if (kids[j].nodeType === 1) {
+        ei++;
+        var c = walk(kids[j], ei, ec);
+        if (c) ch.push(c);
+      }
+    }
+    var n = {
+      nid: nid++, tag: tag.toLowerCase(), id: id, cls: cls, ci: ci, sc: sc,
+      bx: r.x, by: r.y, bw: r.width, bh: r.height,
+      mt: px(v["margin-top"]), mr: px(v["margin-right"]),
+      mb: px(v["margin-bottom"]), ml: px(v["margin-left"]),
+      pt: px(v["padding-top"]), pr: px(v["padding-right"]),
+      pb: px(v["padding-bottom"]), pl: px(v["padding-left"]),
+      bt: px(v["border-top-width"]), br: px(v["border-right-width"]),
+      bb: px(v["border-bottom-width"]), bl: px(v["border-left-width"]),
+      sw: el.scrollWidth, sh: el.scrollHeight,
+      cw: el.clientWidth, ch_h: el.clientHeight,
+      sl: el.scrollLeft, st: el.scrollTop,
+      display: v["display"], position: v["position"],
+      float: v["float"], boxSizing: v["box-sizing"],
+      overflowX: v["overflow-x"], overflowY: v["overflow-y"],
+      zIndex: v["z-index"], opacity: v["opacity"],
+      visibility: v["visibility"], transform: v["transform"],
+      filter: v["filter"], willChange: v["will-change"],
+      isolation: v["isolation"], clipPath: v["clip-path"],
+      flexDirection: v["flex-direction"], flexWrap: v["flex-wrap"],
+      flexShrink: v["flex-shrink"], flexGrow: v["flex-grow"],
+      alignItems: v["align-items"], justifyContent: v["justify-content"],
+      gap: v["gap"],
+      gridTemplateCols: v["grid-template-columns"],
+      gridTemplateRows: v["grid-template-rows"],
+      gridGap: v["grid-gap"],
+      minWidth: v["min-width"], maxWidth: v["max-width"],
+      minHeight: v["min-height"], maxHeight: v["max-height"],
+      width: v["width"], height: v["height"],
+      whiteSpace: v["white-space"], textOverflow: v["text-overflow"],
+      objectFit: v["object-fit"],
+      color: v["color"], bgColor: v["background-color"],
+      fontSize: v["font-size"], lineHeight: v["line-height"],
+      stickyTop: v["top"], stickyBottom: v["bottom"],
+      stickyLeft: v["left"], stickyRight: v["right"],
+      ch: ch
+    };
+    if (tag === "IMG") { n.nw = el.naturalWidth; n.nh = el.naturalHeight; }
+    var txt = "";
+    for (var k = 0; k < el.childNodes.length; k++) {
+      if (el.childNodes[k].nodeType === 3) txt += el.childNodes[k].nodeValue;
+    }
+    txt = txt.trim();
+    if (txt) n.txt = txt.length > 200 ? txt.slice(0, 200) + "..." : txt;
+    return n;
+  }
+  var root = walk(document.documentElement, 1, 1);
+  return { viewport: { width: window.innerWidth, height: window.innerHeight }, root: root };
+})()`;
+
 /**
  * Convert a CDP Quad (8 numbers: [x1,y1, x2,y2, x3,y3, x4,y4]) to a Rect.
  * Quads are clock-wise from top-left.
@@ -212,11 +351,17 @@ function parseAttributes(attrs?: string[]): Map<string, string> {
  * LayoutExtractor uses a CDPConnection to build a complete LayoutTree
  * from the page currently loaded in Chrome.
  */
+export interface ExtractionOptions {
+  lightweight?: boolean;
+}
+
 export class LayoutExtractor {
   private connection: CDPConnection;
 
   /** Cache of stylesheet source URLs keyed by styleSheetId */
   private stylesheetSources = new Map<string, string>();
+
+  private lightweight = false;
 
   constructor(connection: CDPConnection) {
     this.connection = connection;
@@ -224,12 +369,118 @@ export class LayoutExtractor {
 
   /**
    * Extract the full layout tree from the connected browser page.
+   * In lightweight mode, uses a single Runtime.evaluate call to batch-collect
+   * all data from the browser (orders of magnitude faster on large pages).
    */
-  async extractTree(): Promise<LayoutTree> {
+  async extractTree(options?: ExtractionOptions): Promise<LayoutTree> {
+    this.lightweight = options?.lightweight ?? false;
+
+    if (this.lightweight) {
+      return this.extractTreeBatch();
+    }
+
+    return this.extractTreeFull();
+  }
+
+  /**
+   * Lightweight batch extraction: ONE Runtime.evaluate call collects
+   * the entire DOM tree with geometry, computed styles, and scroll state.
+   * Skips CSS rule sources (no per-element CDP calls).
+   */
+  private async extractTreeBatch(): Promise<LayoutTree> {
     const client = this.connection.client;
     const timestamp = Date.now();
 
-    // Fetch document root and viewport in parallel
+    const result = await client.Runtime.evaluate({
+      expression: BATCH_EXTRACT_JS,
+      returnByValue: true,
+      timeout: 30000,
+    });
+
+    if (result.exceptionDetails) {
+      throw new Error(
+        `Batch extraction failed: ${result.exceptionDetails.text}`,
+      );
+    }
+
+    const raw = result.result.value as BatchResult;
+    const root = this.convertBatchNode(raw.root, undefined);
+
+    if (!root) {
+      throw new Error("Failed to extract layout tree: root element produced no layout");
+    }
+
+    return {
+      viewport: raw.viewport,
+      root,
+      timestamp,
+    };
+  }
+
+  private convertBatchNode(
+    raw: BatchNode,
+    parentDisplay: string | undefined,
+  ): LayoutNode | null {
+    if (raw.display === "none") return null;
+
+    const computed = batchToComputed(raw);
+    const stacking = computeStackingInfo(computed, parentDisplay);
+
+    const children: LayoutNode[] = [];
+    for (const child of raw.ch) {
+      const converted = this.convertBatchNode(child, computed.display);
+      if (converted) {
+        children.push(converted);
+      }
+    }
+
+    const boxModel = batchToBoxModel(raw);
+    const selector = buildSelector(
+      raw.tag, raw.id, raw.cls, raw.ci, raw.sc,
+    );
+
+    const node: LayoutNode = {
+      nodeId: raw.nid,
+      tag: raw.tag,
+      id: raw.id || undefined,
+      classes: raw.cls,
+      selector,
+      boxModel,
+      computed,
+      scroll: {
+        scrollWidth: raw.sw,
+        scrollHeight: raw.sh,
+        clientWidth: raw.cw,
+        clientHeight: raw.ch_h,
+        scrollLeft: raw.sl,
+        scrollTop: raw.st,
+        isScrollContainer: raw.sw > raw.cw || raw.sh > raw.ch_h,
+      },
+      stacking,
+      rules: [],
+      children,
+      timestamp: Date.now(),
+    };
+
+    if (raw.nw !== undefined && raw.nh !== undefined && (raw.nw > 0 || raw.nh > 0)) {
+      node.naturalSize = { width: raw.nw, height: raw.nh };
+    }
+
+    if (raw.txt) {
+      node.textContent = raw.txt;
+    }
+
+    return node;
+  }
+
+  /**
+   * Full extraction with per-element CDP calls (original approach).
+   * Used by inspect_element, trace_property, compare_elements.
+   */
+  private async extractTreeFull(): Promise<LayoutTree> {
+    const client = this.connection.client;
+    const timestamp = Date.now();
+
     const [docResult, viewportResult] = await Promise.all([
       client.DOM.getDocument({ depth: -1 }),
       client.Runtime.evaluate({
@@ -243,11 +494,8 @@ export class LayoutExtractor {
       height: number;
     };
 
-    // Collect stylesheet source URLs for rule source mapping
     await this.collectStylesheetSources();
 
-    // The document root (nodeType 9) is not an element itself.
-    // Find the <html> element (or first element child) to start traversal.
     const docChildren = docResult.root.children || [];
     const htmlNode = docChildren.find(
       (child) => child.nodeType === ELEMENT_NODE && child.localName === "html",
@@ -723,6 +971,104 @@ function defaultScrollState(): ScrollState {
     scrollLeft: 0,
     scrollTop: 0,
     isScrollContainer: false,
+  };
+}
+
+function batchToComputed(raw: BatchNode): ComputedStyles {
+  const result: ComputedStyles = {
+    display: raw.display,
+    position: raw.position,
+    float: raw.float,
+    boxSizing: raw.boxSizing,
+    overflowX: raw.overflowX,
+    overflowY: raw.overflowY,
+    zIndex: raw.zIndex,
+    opacity: raw.opacity,
+    visibility: raw.visibility,
+    transform: raw.transform,
+    filter: raw.filter,
+    willChange: raw.willChange,
+    isolation: raw.isolation,
+    clipPath: raw.clipPath,
+    flexDirection: raw.flexDirection || undefined,
+    flexWrap: raw.flexWrap || undefined,
+    flexShrink: raw.flexShrink || undefined,
+    flexGrow: raw.flexGrow || undefined,
+    alignItems: raw.alignItems || undefined,
+    justifyContent: raw.justifyContent || undefined,
+    gap: raw.gap || undefined,
+    gridTemplateColumns: raw.gridTemplateCols || undefined,
+    gridTemplateRows: raw.gridTemplateRows || undefined,
+    gridGap: raw.gridGap || undefined,
+    minWidth: raw.minWidth,
+    maxWidth: raw.maxWidth,
+    minHeight: raw.minHeight,
+    maxHeight: raw.maxHeight,
+    width: raw.width,
+    height: raw.height,
+    whiteSpace: raw.whiteSpace,
+    textOverflow: raw.textOverflow,
+    objectFit: raw.objectFit || undefined,
+    color: raw.color || undefined,
+    backgroundColor: raw.bgColor || undefined,
+    fontSize: raw.fontSize || undefined,
+    lineHeight: raw.lineHeight || undefined,
+  };
+
+  if (raw.position === "sticky") {
+    result.positionSticky = {
+      top: raw.stickyTop || undefined,
+      bottom: raw.stickyBottom || undefined,
+      left: raw.stickyLeft || undefined,
+      right: raw.stickyRight || undefined,
+    };
+  }
+
+  return result;
+}
+
+function batchToBoxModel(raw: BatchNode): BoxModel {
+  // getBoundingClientRect gives the border box
+  const borderRect: Rect = { x: raw.bx, y: raw.by, width: raw.bw, height: raw.bh };
+
+  const padding: Edges = { top: raw.pt, right: raw.pr, bottom: raw.pb, left: raw.pl };
+  const border: Edges = { top: raw.bt, right: raw.br, bottom: raw.bb, left: raw.bl };
+  const margin: Edges = { top: raw.mt, right: raw.mr, bottom: raw.mb, left: raw.ml };
+
+  // Content = border box minus border and padding
+  const content: Rect = {
+    x: borderRect.x + border.left + padding.left,
+    y: borderRect.y + border.top + padding.top,
+    width: borderRect.width - border.left - border.right - padding.left - padding.right,
+    height: borderRect.height - border.top - border.bottom - padding.top - padding.bottom,
+  };
+
+  // Total (margin box) = border box + margin
+  const total: Rect = {
+    x: borderRect.x - margin.left,
+    y: borderRect.y - margin.top,
+    width: borderRect.width + margin.left + margin.right,
+    height: borderRect.height + margin.top + margin.bottom,
+  };
+
+  return { content, padding, border, margin, total };
+}
+
+// In lightweight mode, approximate scroll state from computed overflow values
+function scrollStateFromComputed(computed: ComputedStyles): ScrollState {
+  const isScroll =
+    computed.overflowX === "scroll" ||
+    computed.overflowX === "auto" ||
+    computed.overflowY === "scroll" ||
+    computed.overflowY === "auto";
+  return {
+    scrollWidth: 0,
+    scrollHeight: 0,
+    clientWidth: 0,
+    clientHeight: 0,
+    scrollLeft: 0,
+    scrollTop: 0,
+    isScrollContainer: isScroll,
   };
 }
 

@@ -82,6 +82,10 @@ export interface ComputedStyles {
   whiteSpace: string;
   textOverflow: string;
   objectFit?: string;
+  color?: string;
+  backgroundColor?: string;
+  fontSize?: string;
+  lineHeight?: string;
   positionSticky?: {
     top?: string;
     bottom?: string;
@@ -105,6 +109,7 @@ export interface LayoutNode {
   parentId?: number;
   timestamp?: number;
   naturalSize?: { width: number; height: number };
+  textContent?: string;
 }
 
 export interface LayoutTree {

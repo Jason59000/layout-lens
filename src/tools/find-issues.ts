@@ -59,7 +59,7 @@ export function registerFindIssues(server: McpServer): void {
         });
 
         const extractor = new LayoutExtractor(connection);
-        const tree = await extractor.extractTree();
+        const tree = await extractor.extractTree({ lightweight: true });
 
         let detectors = allDetectors();
         if (params.category) {

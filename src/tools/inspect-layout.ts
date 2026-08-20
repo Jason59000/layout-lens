@@ -50,7 +50,7 @@ export function registerInspectLayout(server: McpServer): void {
         });
 
         const extractor = new LayoutExtractor(connection);
-        const tree = await extractor.extractTree();
+        const tree = await extractor.extractTree({ lightweight: true });
 
         const detectors = allDetectors();
         const issues: Issue[] = [];
