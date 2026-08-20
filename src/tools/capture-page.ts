@@ -134,6 +134,7 @@ Available showProperties: zIndex, position, overflow, display, opacity, visibili
       viewportWidth: z.number().optional().describe("Resize viewport width before capture (for responsive testing)"),
       viewportHeight: z.number().optional().describe("Resize viewport height before capture (for responsive testing)"),
       fullPage: z.boolean().optional().describe("Capture the full scrollable page, not just the viewport (default: false)"),
+      colorScheme: z.enum(["light", "dark"]).optional().describe("Emulate prefers-color-scheme media feature before capture"),
       port: z.number().optional().describe("Chrome debugging port (default: 9222)"),
       host: z.string().optional().describe("Chrome debugging host (default: localhost)"),
     },
@@ -152,6 +153,13 @@ Available showProperties: zIndex, position, overflow, display, opacity, visibili
             height: params.viewportHeight ?? 0,
             deviceScaleFactor: 1,
             mobile: (params.viewportWidth ?? 1024) < 768,
+          });
+          await new Promise(r => setTimeout(r, 200));
+        }
+
+        if (params.colorScheme) {
+          await client.Emulation.setEmulatedMedia({
+            features: [{ name: "prefers-color-scheme", value: params.colorScheme }],
           });
           await new Promise(r => setTimeout(r, 200));
         }
@@ -199,6 +207,10 @@ Available showProperties: zIndex, position, overflow, display, opacity, visibili
 
         if (params.viewportWidth || params.viewportHeight) {
           await client.Emulation.clearDeviceMetricsOverride();
+        }
+
+        if (params.colorScheme) {
+          await client.Emulation.setEmulatedMedia({ features: [] });
         }
 
         if (annotations.length > 0) {

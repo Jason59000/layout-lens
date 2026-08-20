@@ -119,6 +119,7 @@ Examples:
       expression: z.string().describe("JavaScript expression to evaluate on the layout tree"),
       viewportWidth: z.number().optional().describe("Resize viewport width before extraction (for responsive testing)"),
       viewportHeight: z.number().optional().describe("Resize viewport height before extraction (for responsive testing)"),
+      colorScheme: z.enum(["light", "dark"]).optional().describe("Emulate prefers-color-scheme media feature before extraction"),
       port: z.number().optional().describe("Chrome debugging port (default: 9222)"),
       host: z.string().optional().describe("Chrome debugging host (default: localhost)"),
     },
@@ -136,6 +137,13 @@ Examples:
             height: params.viewportHeight ?? 0,
             deviceScaleFactor: 1,
             mobile: (params.viewportWidth ?? 1024) < 768,
+          });
+          await new Promise(r => setTimeout(r, 200));
+        }
+
+        if (params.colorScheme) {
+          await connection.client.Emulation.setEmulatedMedia({
+            features: [{ name: "prefers-color-scheme", value: params.colorScheme }],
           });
           await new Promise(r => setTimeout(r, 200));
         }
@@ -180,6 +188,10 @@ Examples:
           await connection.client.Emulation.clearDeviceMetricsOverride();
         }
 
+        if (params.colorScheme) {
+          await connection.client.Emulation.setEmulatedMedia({ features: [] });
+        }
+
         return {
           content: [{ type: "text", text }],
         };
@@ -187,6 +199,9 @@ Examples:
         const message = err instanceof Error ? err.message : String(err);
         if (connection && (params.viewportWidth || params.viewportHeight)) {
           await connection.client.Emulation.clearDeviceMetricsOverride().catch(() => {});
+        }
+        if (connection && params.colorScheme) {
+          await connection.client.Emulation.setEmulatedMedia({ features: [] }).catch(() => {});
         }
         return {
           content: [{ type: "text", text: `QUERY ERROR: ${message}` }],

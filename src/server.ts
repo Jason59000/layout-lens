@@ -9,6 +9,7 @@ import { registerCompareElements } from "./tools/compare-elements.js";
 import { registerGetScrollTree } from "./tools/get-scroll-tree.js";
 import { registerQueryLayout } from "./tools/query-layout.js";
 import { registerCapturePage } from "./tools/capture-page.js";
+import { registerCompareColorSchemes } from "./tools/compare-color-schemes.js";
 
 const server = new McpServer({
   name: "layout-lens",
@@ -24,6 +25,7 @@ registerCompareElements(server);
 registerGetScrollTree(server);
 registerQueryLayout(server);
 registerCapturePage(server);
+registerCompareColorSchemes(server);
 
 async function main() {
   const transport = new StdioServerTransport();
