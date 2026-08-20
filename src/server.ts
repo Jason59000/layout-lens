@@ -15,6 +15,8 @@ import { registerCheckInteractiveStates } from "./tools/check-interactive-states
 import { registerWatchDomMutations } from "./tools/watch-dom-mutations.js";
 import { registerProfileRendering } from "./tools/profile-rendering.js";
 import { registerTestResponsive } from "./tools/test-responsive.js";
+import { registerInspectAccessibility } from "./tools/inspect-accessibility.js";
+import { registerGetPerformanceMetrics } from "./tools/get-performance-metrics.js";
 
 const server = new McpServer({
   name: "layout-lens",
@@ -35,6 +37,8 @@ registerCheckInteractiveStates(server);
 registerWatchDomMutations(server);
 registerProfileRendering(server);
 registerTestResponsive(server);
+registerInspectAccessibility(server);
+registerGetPerformanceMetrics(server);
 
 async function main() {
   const transport = new StdioServerTransport();

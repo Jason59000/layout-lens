@@ -20,7 +20,7 @@ src/
 │   └── extractor.ts    # Batch + Full extraction, framework detection, shadow DOM
 ├── diagnostics/   # CSS rule tracing, Tailwind detection
 ├── formatter/     # LLM-friendly text output (tree view, element detail, cascade)
-├── tools/         # 14 MCP tool implementations
+├── tools/         # 16 MCP tool implementations
 ├── types.ts       # Shared types (LayoutNode, BoxModel) + tree utility functions
 └── server.ts      # MCP server entry point
 ```
@@ -31,7 +31,7 @@ src/
 - **Full**: per-element CDP calls, includes CSS rule sources (file:line), event listeners, React component mapping.
 - **Monitor**: time-based observation (DOM mutations, frame timing, multi-viewport).
 
-## 14 MCP Tools
+## 16 MCP Tools
 
 | Tool | Mode | Purpose |
 |------|------|---------|
@@ -39,7 +39,7 @@ src/
 | `get_scroll_tree` | batch | Scroll containers + sticky elements |
 | `query_layout` | batch | Custom JS queries + responsive + colorScheme |
 | `capture_page` | batch | Annotated screenshot + responsive + colorScheme |
-| `inspect_element` | full | CSS rules, event listeners, React component |
+| `inspect_element` | full | Deep element inspection (CSS, events, React, hit-test, clipping, fonts, grid/flex, transforms) |
 | `trace_property` | full | CSS cascade for a specific property |
 | `compare_elements` | full | Geometric diff between two elements |
 | `detect_layout_shifts` | snapshot | CLS score + shift source elements |
@@ -49,10 +49,12 @@ src/
 | `watch_dom_mutations` | monitor | DOM mutations over fixed duration |
 | `profile_rendering` | monitor | FPS + jank frames + frame distribution |
 | `test_responsive` | multi | 6 viewports + overflow/visibility/layout diff |
+| `inspect_accessibility` | full | Full accessibility tree with roles, names, states |
+| `get_performance_metrics` | snapshot | JS heap, DOM count, layout/script duration, navigation timing |
 
 ## Data extracted per element
 
-Geometry, 35+ computed styles, color/fontSize/lineHeight, textContent, pseudo-elements (::before/::after), accessibility (role, aria-label, aria-hidden, tabindex), stacking contexts, scroll state, natural image sizes, shadow DOM boundaries.
+Geometry, 40+ computed styles, color/fontSize/lineHeight, textContent, pseudo-elements (::before/::after), accessibility (role, aria-label, aria-hidden, tabindex), stacking contexts, scroll state, natural image sizes, shadow DOM boundaries, containing block.
 
 ## Enrichments
 
@@ -60,6 +62,16 @@ Geometry, 35+ computed styles, color/fontSize/lineHeight, textContent, pseudo-el
 - React component name + hierarchy in inspect_element via fiber tree walk
 - Tailwind CSS detection in inspect_layout header
 - Shadow DOM piercing in batch extraction
+- Containing block detection for positioned elements (batch + inspect_element)
+- Blended background color (CSS.getBackgroundColors) in inspect_element
+- Hit-testing (elementsFromPoint) — what's on top at element center
+- Clipping chain — all overflow/clip-path/contain ancestors
+- Font metrics (CSS.getPlatformFontsForNode) — actual rendered font
+- Interaction state (pointer-events/inert/disabled/aria-disabled)
+- Focus info (focusable, tabindex, inert ancestor)
+- Scroll ownership chain
+- Grid/flex resolved geometry (tracks, items, grow/shrink/basis)
+- Transform chain (all ancestor transforms with origin)
 
 ## Conventions
 

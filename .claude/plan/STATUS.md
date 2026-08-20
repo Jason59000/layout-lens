@@ -53,8 +53,8 @@
 
 ## V9 — Nouveaux outils
 
-- [ ] 9a. `inspect_accessibility` — arbre AX complet (CDP Accessibility.getFullAXTree)
-- [ ] 9b. `get_performance_metrics` — métriques runtime (Performance.getMetrics)
+- [x] 9a. `inspect_accessibility` — arbre AX complet (CDP Accessibility.getFullAXTree)
+- [x] 9b. `get_performance_metrics` — métriques runtime (Performance.getMetrics)
 - [ ] 9c. Compositing layers dans profile_rendering (LayerTree)
 - [ ] 9d. Main-thread scroll reasons (LayerTree.ScrollRect)
 - [ ] 9e. Container queries actives — quels @container matchent
